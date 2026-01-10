@@ -52,6 +52,26 @@ Whether you're planning a trip with friends, sharing rent with roommates, or man
 - **Permission Handling**: Proper permission management for contacts access
 - **Responsive Design**: Adapts to different screen sizes
 
+## 📥 Download & Try Now!
+
+### 🎉 Latest Release: v1.0.0
+
+Want to try the app right away? Download the latest release!
+
+#### 🤖 For Android Users
+- **[Download APK (50.2 MB)](https://github.com/369KeYuRmIsTrY/split_expenses/releases/download/v1.0.0/split-expenses-v1.0.0.apk)** - Direct install
+- **[View All Releases](https://github.com/369KeYuRmIsTrY/split_expenses/releases)** - See release notes and older versions
+
+#### 📋 Quick Install
+1. Download the APK file above
+2. Enable "Install from Unknown Sources" in your Android settings
+3. Open the APK and tap Install
+4. Start splitting expenses!
+
+📖 **[Full Installation Guide](./releases/INSTALLATION_GUIDE.md)** | 📝 **[Release Notes](./releases/RELEASE_NOTES_v1.0.0.md)**
+
+> **Note**: iOS, Web, and Desktop versions coming soon!
+
 ## 📸 Screenshots
 
 > Add screenshots of your app here to showcase its beautiful interface
