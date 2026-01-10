@@ -52,9 +52,7 @@ Whether you're planning a trip with friends, sharing rent with roommates, or man
 - **Permission Handling**: Proper permission management for contacts access
 - **Responsive Design**: Adapts to different screen sizes
 
-## 📸 Screenshots
 
-> Add screenshots of your app here to showcase its beautiful interface
 
 ## 🚀 Getting Started
 
