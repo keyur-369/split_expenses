@@ -59,18 +59,24 @@ Whether you're planning a trip with friends, sharing rent with roommates, or man
 Want to try the app right away? Download the latest release!
 
 #### 🤖 For Android Users
-- **[Download APK (50.2 MB)](https://github.com/369KeYuRmIsTrY/split_expenses/releases/download/v1.0.0/split-expenses-v1.0.0.apk)** - Direct install
-- **[View All Releases](https://github.com/369KeYuRmIsTrY/split_expenses/releases)** - See release notes and older versions
 
-#### 📋 Quick Install
-1. Download the APK file above
+**👉 [Go to Releases Page to Download APK](https://github.com/369KeYuRmIsTrY/split_expenses/releases)** 
+
+Once on the Releases page:
+1. Look for **v1.0.0** release
+2. Download `split-expenses-v1.0.0.apk` (50.2 MB)
+3. Install on your Android device
+
+#### 📋 Quick Install Steps
+1. Download the APK file from the Releases page
 2. Enable "Install from Unknown Sources" in your Android settings
 3. Open the APK and tap Install
 4. Start splitting expenses!
 
 📖 **[Full Installation Guide](./releases/INSTALLATION_GUIDE.md)** | 📝 **[Release Notes](./releases/RELEASE_NOTES_v1.0.0.md)**
 
-> **Note**: iOS, Web, and Desktop versions coming soon!
+> **Note**: If you don't see any releases yet, the APK is being prepared. Check back soon!  
+> **Coming Soon**: iOS, Web, and Desktop versions
 
 ## 📸 Screenshots
 
