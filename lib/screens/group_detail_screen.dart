@@ -11,7 +11,7 @@ import '../widgets/expense_tile.dart';
 import '../widgets/add_participant_dialog.dart';
 import '../services/firestore_service.dart';
 import 'add_expense_screen.dart';
-import 'summary_screen.dart';
+import 'settle_up_screen.dart';
 import 'expense_detail_screen.dart';
 
 class GroupDetailScreen extends StatefulWidget {
@@ -370,7 +370,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => SummaryScreen(group: group),
+                          builder: (_) => SettleUpScreen(group: group),
                         ),
                       );
                     },
@@ -632,7 +632,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) => SummaryScreen(group: group),
+                              builder: (_) => SettleUpScreen(group: group),
                             ),
                           );
                         },
@@ -736,13 +736,36 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       orElse: () => Participant(id: 'unknown', name: 'Unknown'),
                     );
 
+                    final currentUserId =
+                        FirebaseAuth.instance.currentUser?.uid;
+                    final isOwner = group.ownerId != null &&
+                        currentUserId == group.ownerId;
+
+                    // Debtors = everyone in expense except the payer
+                    final debtors = expense.involvedParticipantIds
+                        .where((id) => id != expense.payerId)
+                        .toList();
+
+                    // Check if any debtor has been marked paid for this expense
+                    // We use expense-specific keys: "expId:debtorId_payerId"
+                    final anyPaid = debtors.any(
+                      (dId) => group.paidSettlementKeys.contains(
+                        '${expense.id}:${dId}_${expense.payerId}',
+                      ),
+                    );
+
                     return Padding(
                       padding: const EdgeInsets.only(bottom: 12.0),
                       child: ExpenseTile(
                         expense: expense,
                         payerName: payer.name,
+                        hasPaidMembers: anyPaid,
                         onDelete: () =>
                             service.deleteExpense(group, expense.id),
+                        onOwnerLongPress: isOwner
+                            ? () => _showExpenseOwnerSheet(
+                                context, service, group, expense, debtors)
+                            : null,
                         onTap: () {
                           Navigator.push(
                             context,
@@ -846,6 +869,365 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             ),
             if (isLast) const SizedBox(height: 80), // Padding for FAB
           ],
+        );
+      },
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────
+  // Owner long-press bottom sheet for per-expense mark-as-paid
+  // ─────────────────────────────────────────────────────────────────
+  void _showExpenseOwnerSheet(
+    BuildContext context,
+    GroupService service,
+    Group group,
+    Expense expense,
+    List<String> debtorParticipantIds,
+  ) {
+    final splitAmount =
+        expense.involvedParticipantIds.isNotEmpty
+            ? expense.amount / expense.involvedParticipantIds.length
+            : expense.amount;
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) {
+        return _ExpenseOwnerSheet(
+          expense: expense,
+          group: group,
+          debtorParticipantIds: debtorParticipantIds,
+          splitAmount: splitAmount,
+          service: service,
+          onDelete: () {
+            Navigator.pop(ctx);
+            service.deleteExpense(group, expense.id);
+          },
+        );
+      },
+    );
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Stateful bottom sheet widget so it can rebuild on toggle
+// ─────────────────────────────────────────────────────────────────
+class _ExpenseOwnerSheet extends StatefulWidget {
+  final Expense expense;
+  final Group group;
+  final List<String> debtorParticipantIds;
+  final double splitAmount;
+  final GroupService service;
+  final VoidCallback onDelete;
+
+  const _ExpenseOwnerSheet({
+    required this.expense,
+    required this.group,
+    required this.debtorParticipantIds,
+    required this.splitAmount,
+    required this.service,
+    required this.onDelete,
+  });
+
+  @override
+  State<_ExpenseOwnerSheet> createState() => _ExpenseOwnerSheetState();
+}
+
+class _ExpenseOwnerSheetState extends State<_ExpenseOwnerSheet> {
+  final Set<String> _loading = {};
+
+  String _expenseKey(String debtorId) =>
+      '${widget.expense.id}:${debtorId}_${widget.expense.payerId}';
+
+  bool _isPaid(String debtorId) {
+    // Prefer live group from service
+    final liveGroup = widget.service.groups.firstWhere(
+      (g) => g.id == widget.group.id,
+      orElse: () => widget.group,
+    );
+    return liveGroup.paidSettlementKeys.contains(_expenseKey(debtorId));
+  }
+
+  Future<void> _toggle(String debtorId) async {
+    setState(() => _loading.add(debtorId));
+    final key = _expenseKey(debtorId);
+    final paid = _isPaid(debtorId);
+
+    if (paid) {
+      await widget.service.unmarkAsPaid(
+        group: widget.group,
+        debtorId: debtorId,
+        creditorId: widget.expense.payerId,
+        customKey: key,
+      );
+    } else {
+      await widget.service.markAsPaid(
+        group: widget.group,
+        debtorId: debtorId,
+        creditorId: widget.expense.payerId,
+        amount: widget.splitAmount,
+        customKey: key,
+      );
+    }
+
+    if (mounted) setState(() => _loading.remove(debtorId));
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    // Listen to GroupService so the sheet rebuilds after toggles
+    return ListenableBuilder(
+      listenable: widget.service,
+      builder: (context, _) {
+        final payerName = widget.group.participants
+            .firstWhere(
+              (p) => p.id == widget.expense.payerId,
+              orElse: () => Participant(id: '?', name: 'Unknown'),
+            )
+            .name;
+
+        return Container(
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          ),
+          padding: const EdgeInsets.fromLTRB(20, 12, 20, 32),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+              const SizedBox(height: 20),
+
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF005041).withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: const Icon(
+                      Icons.receipt_long_rounded,
+                      color: Color(0xFF005041),
+                      size: 22,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(
+                          widget.expense.title,
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 18,
+                          ),
+                        ),
+                        Text(
+                          'Paid by $payerName  •  ₹${widget.expense.amount.toStringAsFixed(2)}',
+                          style: TextStyle(
+                            color: Colors.grey[600],
+                            fontSize: 13,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 20),
+
+              Text(
+                'WHO HAS PAID THEIR SHARE?',
+                style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: 0.8,
+                  color: Colors.grey[500],
+                ),
+              ),
+              const SizedBox(height: 12),
+
+              // Debtor list
+              if (widget.debtorParticipantIds.isEmpty)
+                Padding(
+                  padding: const EdgeInsets.symmetric(vertical: 8),
+                  child: Text(
+                    'No one owes money for this expense.',
+                    style: TextStyle(color: Colors.grey[500]),
+                  ),
+                )
+              else
+                ...widget.debtorParticipantIds.map((dId) {
+                  final person = widget.group.participants.firstWhere(
+                    (p) => p.id == dId,
+                    orElse: () => Participant(id: '?', name: 'Unknown'),
+                  );
+                  final paid = _isPaid(dId);
+                  final loading = _loading.contains(dId);
+
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 10),
+                    decoration: BoxDecoration(
+                      color: paid
+                          ? Colors.green.withOpacity(0.07)
+                          : Theme.of(context).cardTheme.color ??
+                              Theme.of(context).cardColor,
+                      borderRadius: BorderRadius.circular(16),
+                      border: Border.all(
+                        color: paid
+                            ? Colors.green.withOpacity(0.4)
+                            : Colors.grey.withOpacity(0.12),
+                        width: paid ? 1.5 : 1,
+                      ),
+                    ),
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(
+                        horizontal: 16,
+                        vertical: 4,
+                      ),
+                      leading: CircleAvatar(
+                        backgroundColor: paid
+                            ? Colors.green.withOpacity(0.15)
+                            : Theme.of(context).colorScheme.primaryContainer,
+                        foregroundColor: paid
+                            ? Colors.green
+                            : Theme.of(context).colorScheme.primary,
+                        child: Text(
+                          person.name.isNotEmpty
+                              ? person.name[0].toUpperCase()
+                              : '?',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                      title: Text(
+                        person.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: paid ? Colors.green[700] : null,
+                          decoration:
+                              paid ? TextDecoration.none : null,
+                        ),
+                      ),
+                      subtitle: Text(
+                        paid
+                            ? 'Marked as paid ✓'
+                            : 'Owes ₹${widget.splitAmount.toStringAsFixed(2)}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: paid
+                              ? Colors.green
+                              : Colors.redAccent[200],
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                      trailing: loading
+                          ? const SizedBox(
+                              width: 24,
+                              height: 24,
+                              child: CircularProgressIndicator(
+                                strokeWidth: 2.5,
+                              ),
+                            )
+                          : GestureDetector(
+                              onTap: () => _toggle(dId),
+                              child: AnimatedContainer(
+                                duration: const Duration(milliseconds: 200),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 14,
+                                  vertical: 8,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: paid
+                                      ? Colors.green
+                                      : const Color(0xFF005041),
+                                  borderRadius: BorderRadius.circular(20),
+                                  boxShadow: [
+                                    BoxShadow(
+                                      color: (paid
+                                              ? Colors.green
+                                              : const Color(0xFF005041))
+                                          .withOpacity(0.3),
+                                      blurRadius: 8,
+                                      offset: const Offset(0, 3),
+                                    ),
+                                  ],
+                                ),
+                                child: Row(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Icon(
+                                      paid
+                                          ? Icons.check_rounded
+                                          : Icons.payments_outlined,
+                                      color: Colors.white,
+                                      size: 14,
+                                    ),
+                                    const SizedBox(width: 5),
+                                    Text(
+                                      paid ? 'Paid ✓' : 'Mark Paid',
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: 12,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                    ),
+                  );
+                }),
+
+              const Divider(height: 28),
+
+              // Delete option
+              InkWell(
+                onTap: widget.onDelete,
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.symmetric(vertical: 14),
+                  decoration: BoxDecoration(
+                    color: Colors.red.withOpacity(0.07),
+                    borderRadius: BorderRadius.circular(12),
+                    border: Border.all(color: Colors.red.withOpacity(0.2)),
+                  ),
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.delete_outline_rounded,
+                          color: Colors.red[600], size: 18),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Delete Expense',
+                        style: TextStyle(
+                          color: Colors.red[600],
+                          fontWeight: FontWeight.bold,
+                          fontSize: 14,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ],
+          ),
         );
       },
     );

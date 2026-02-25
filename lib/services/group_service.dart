@@ -38,7 +38,7 @@ class GroupService extends ChangeNotifier {
     final user = FirebaseAuth.instance.currentUser;
 
     if (user != null) {
-      // Cancel existing subscriptions
+      // Cancel existing subscriptions before starting fresh
       _groupsSubscription?.cancel();
       for (var subscription in _expenseSubscriptions.values) {
         subscription.cancel();
@@ -52,79 +52,72 @@ class GroupService extends ChangeNotifier {
             (groupsSnapshot) async {
               final firestoreGroups = <Group>[];
 
+              // Collect all unique member IDs across all groups for batch fetch
+              final allMemberIds = <String>{};
+              for (final doc in groupsSnapshot.docs) {
+                final data = doc.data() as Map<String, dynamic>;
+                final memberIds = List<String>.from(data['members'] ?? []);
+                allMemberIds.addAll(memberIds);
+              }
+
+              // BATCH: fetch all user docs in parallel (one round-trip instead of N)
+              final userDataMap = await _firestoreService.getUserDocumentsBatch(
+                allMemberIds.toList(),
+              );
+
+              // PARALLEL: fetch all group expenses at the same time
+              final expenseFutures = <String, Future<QuerySnapshot>>{};
+              for (final doc in groupsSnapshot.docs) {
+                expenseFutures[doc.id] =
+                    _firestoreService.getGroupExpenses(doc.id).first;
+              }
+              final expenseSnapshots = await Future.wait(
+                expenseFutures.values,
+              );
+              final expenseSnapshotMap = <String, QuerySnapshot>{};
+              int i = 0;
+              for (final docId in expenseFutures.keys) {
+                expenseSnapshotMap[docId] = expenseSnapshots[i++];
+              }
+
               for (final doc in groupsSnapshot.docs) {
                 try {
                   final data = doc.data() as Map<String, dynamic>;
-
-                  // Load participants from members array FIRST
                   final memberIds = List<String>.from(data['members'] ?? []);
-                  final participants = <Participant>[];
 
-                  // Look up user info for each member
-                  for (final memberId in memberIds) {
-                    try {
-                      final userDoc = await _firestoreService.getUserDocument(
-                        memberId,
-                      );
-
-                      if (userDoc != null && userDoc.exists) {
-                        final userData = userDoc.data() as Map<String, dynamic>;
-                        participants.add(
-                          Participant(
-                            id: memberId, // Use uid as participant id
-                            name: userData['name'] ?? 'Unknown',
-                            email: userData['email'],
-                            userId: memberId,
-                          ),
-                        );
-                      } else {
-                        // Member not found, create placeholder
-                        participants.add(
-                          Participant(
-                            id: memberId,
-                            name: 'Unknown User',
-                            userId: memberId,
-                          ),
-                        );
-                      }
-                    } catch (e) {
-                      debugPrint('Error loading user $memberId: $e');
-                      // Add placeholder even on error to maintain member list
-                      participants.add(
-                        Participant(
-                          id: memberId,
-                          name: 'Unknown User',
-                          userId: memberId,
-                        ),
+                  // Build participants from batch-fetched user data
+                  final participants = memberIds.map((memberId) {
+                    final userData = userDataMap[memberId];
+                    if (userData != null) {
+                      return Participant(
+                        id: memberId,
+                        name: userData['name'] ?? 'Unknown',
+                        email: userData['email'],
+                        userId: memberId,
                       );
                     }
-                  }
+                    return Participant(
+                      id: memberId,
+                      name: 'Unknown User',
+                      userId: memberId,
+                    );
+                  }).toList();
 
-                  // Create a map of userId -> participant for quick lookup
                   final participantMap = {
                     for (var p in participants) p.userId ?? p.id: p,
                   };
 
-                  // Load expenses for this group
-                  final expensesSnapshot = await _firestoreService
-                      .getGroupExpenses(doc.id)
-                      .first;
-
+                  // Use the pre-fetched expense snapshot
+                  final expensesSnapshot = expenseSnapshotMap[doc.id]!;
                   final expenses = expensesSnapshot.docs.map((expDoc) {
                     final expData = expDoc.data() as Map<String, dynamic>;
-
-                    // paidBy and splitWith are now user IDs (Firebase UIDs) from Firestore
                     final paidByUserId = expData['paidBy'] ?? '';
                     final splitWithUserIds = List<String>.from(
                       expData['splitWith'] ?? [],
                     );
-
-                    // Convert user IDs to participant IDs for local Expense model
-                    // Find participant ID from userId (participants use UID as ID)
                     final payerParticipant = participantMap[paidByUserId];
                     final payerParticipantId =
                         payerParticipant?.id ?? paidByUserId;
-
                     final involvedParticipantIds = splitWithUserIds.map((uid) {
                       final participant = participantMap[uid];
                       return participant?.id ?? uid;
@@ -142,6 +135,13 @@ class GroupService extends ChangeNotifier {
                     );
                   }).toList();
 
+                  // Fetch ownerId and paid settlements in parallel
+                  final ownerId = data['ownerId'] as String?;
+                  final paidKeys =
+                      await _firestoreService.getSettlementsOnce(doc.id);
+                  final paidNotes =
+                      await _firestoreService.getSettlementNotesOnce(doc.id);
+
                   final group = Group(
                     id: doc.id,
                     name: data['name'] ?? '',
@@ -150,90 +150,101 @@ class GroupService extends ChangeNotifier {
                     createdAt:
                         (data['createdAt'] as Timestamp?)?.toDate() ??
                         DateTime.now(),
+                    ownerId: ownerId,
+                    paidSettlementKeys: paidKeys,
+                    paidSettlementNotes: paidNotes,
                   );
 
                   // Save to local Hive for offline access
                   await _storageService.addGroup(group);
-
                   firestoreGroups.add(group);
 
-                  // Set up real-time listener for expenses of this group
-                  _expenseSubscriptions[doc.id]?.cancel();
-                  _expenseSubscriptions[doc
-                      .id] = _firestoreService.getGroupExpenses(doc.id).listen((
-                    expensesSnapshot,
-                  ) async {
-                    // Rebuild participant map for this group
-                    final groupIndex = _groups.indexWhere(
-                      (g) => g.id == doc.id,
-                    );
-                    if (groupIndex == -1) return;
+                  // Only create expense subscription if not already listening
+                  if (!_expenseSubscriptions.containsKey(doc.id)) {
+                    _expenseSubscriptions[doc.id] = _firestoreService
+                        .getGroupExpenses(doc.id)
+                        .listen((expensesSnapshot) async {
+                      final groupIndex = _groups.indexWhere(
+                        (g) => g.id == doc.id,
+                      );
+                      if (groupIndex == -1) return;
 
-                    final currentGroup = _groups[groupIndex];
-                    final participantMap = {
-                      for (var p in currentGroup.participants)
-                        p.userId ?? p.id: p,
-                    };
+                      final currentGroup = _groups[groupIndex];
+                      final participantMap = {
+                        for (var p in currentGroup.participants)
+                          p.userId ?? p.id: p,
+                      };
 
-                    // Convert expenses from Firestore (user IDs) to local format (participant IDs)
-                    final updatedExpenses = expensesSnapshot.docs.map((expDoc) {
-                      final expData = expDoc.data() as Map<String, dynamic>;
-                      final paidByUserId = expData['paidBy'] ?? '';
-                      final splitWithUserIds = List<String>.from(
-                        expData['splitWith'] ?? [],
+                      final updatedExpenses = expensesSnapshot.docs
+                          .map((expDoc) {
+                            final expData =
+                                expDoc.data() as Map<String, dynamic>;
+                            final paidByUserId = expData['paidBy'] ?? '';
+                            final splitWithUserIds = List<String>.from(
+                              expData['splitWith'] ?? [],
+                            );
+                            final payerParticipant =
+                                participantMap[paidByUserId];
+                            final payerParticipantId =
+                                payerParticipant?.id ?? paidByUserId;
+                            final involvedParticipantIds =
+                                splitWithUserIds.map((uid) {
+                                  final participant = participantMap[uid];
+                                  return participant?.id ?? uid;
+                                }).toList();
+
+                            return Expense(
+                              id: expDoc.id,
+                              title: expData['title'] ?? '',
+                              amount: (expData['amount'] ?? 0.0).toDouble(),
+                              payerId: payerParticipantId,
+                              involvedParticipantIds: involvedParticipantIds,
+                              date:
+                                  (expData['createdAt'] as Timestamp?)
+                                      ?.toDate() ??
+                                  DateTime.now(),
+                            );
+                          })
+                          .toList();
+
+                      _groups[groupIndex] = Group(
+                        id: currentGroup.id,
+                        name: currentGroup.name,
+                        participants: currentGroup.participants,
+                        expenses: updatedExpenses,
+                        createdAt: currentGroup.createdAt,
+                        ownerId: currentGroup.ownerId,
+                        paidSettlementKeys: currentGroup.paidSettlementKeys,
+                        paidSettlementNotes: currentGroup.paidSettlementNotes,
                       );
 
-                      final payerParticipant = participantMap[paidByUserId];
-                      final payerParticipantId =
-                          payerParticipant?.id ?? paidByUserId;
-
-                      final involvedParticipantIds = splitWithUserIds.map((
-                        uid,
-                      ) {
-                        final participant = participantMap[uid];
-                        return participant?.id ?? uid;
-                      }).toList();
-
-                      return Expense(
-                        id: expDoc.id,
-                        title: expData['title'] ?? '',
-                        amount: (expData['amount'] ?? 0.0).toDouble(),
-                        payerId: payerParticipantId,
-                        involvedParticipantIds: involvedParticipantIds,
-                        date:
-                            (expData['createdAt'] as Timestamp?)?.toDate() ??
-                            DateTime.now(),
-                      );
-                    }).toList();
-
-                    // Update the group with new expenses
-                    _groups[groupIndex] = Group(
-                      id: currentGroup.id,
-                      name: currentGroup.name,
-                      participants: currentGroup.participants,
-                      expenses: updatedExpenses,
-                      createdAt: currentGroup.createdAt,
-                    );
-
-                    // Save to local Hive
-                    await _storageService.addGroup(_groups[groupIndex]);
-
-                    notifyListeners();
-                  });
+                      await _storageService.addGroup(_groups[groupIndex]);
+                      notifyListeners();
+                    });
+                  }
                 } catch (e) {
                   debugPrint('Error loading group ${doc.id}: $e');
                 }
               }
 
+              // Cancel subscriptions for groups that no longer exist
+              final currentGroupIds =
+                  groupsSnapshot.docs.map((d) => d.id).toSet();
+              final staleIds = _expenseSubscriptions.keys
+                  .where((id) => !currentGroupIds.contains(id))
+                  .toList();
+              for (final id in staleIds) {
+                _expenseSubscriptions[id]?.cancel();
+                _expenseSubscriptions.remove(id);
+              }
+
               _groups = firestoreGroups;
-              // Sort by date (newest first)
               _groups.sort((a, b) => b.createdAt.compareTo(a.createdAt));
               _isLoading = false;
               notifyListeners();
             },
             onError: (error) {
               debugPrint('Error in groups stream: $error');
-              // Fallback to local storage
               _groups = _storageService.getAllGroups();
               _groups.sort((a, b) => b.createdAt.compareTo(a.createdAt));
               _isLoading = false;
@@ -258,6 +269,7 @@ class GroupService extends ChangeNotifier {
       participants: [],
       expenses: [],
       createdAt: DateTime.now(),
+      ownerId: user?.uid,
     );
 
     // Local (Hive)
@@ -295,6 +307,96 @@ class GroupService extends ChangeNotifier {
 
     // Also delete from Firestore
     await _firestoreService.deleteGroup(groupId);
+  }
+
+  /// Mark a settlement as paid (owner only).
+  /// [customKey] overrides the default "debtorId_creditorId" key —
+  /// e.g. use "expId:debtorId_payerId" for expense-scoped payments.
+  /// [note] is an optional owner message shown to all members.
+  Future<void> markAsPaid({
+    required Group group,
+    required String debtorId,
+    required String creditorId,
+    required double amount,
+    String? customKey,
+    String? note,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final key = customKey ?? '${debtorId}_$creditorId';
+    final idx = _groups.indexWhere((g) => g.id == group.id);
+    if (idx != -1) {
+      final updatedKeys =
+          Set<String>.from(_groups[idx].paidSettlementKeys)..add(key);
+      final updatedNotes =
+          Map<String, String>.from(_groups[idx].paidSettlementNotes);
+      if (note != null && note.trim().isNotEmpty) {
+        updatedNotes[key] = note.trim();
+      } else {
+        updatedNotes.remove(key);
+      }
+      _groups[idx] = Group(
+        id: _groups[idx].id,
+        name: _groups[idx].name,
+        participants: _groups[idx].participants,
+        expenses: _groups[idx].expenses,
+        createdAt: _groups[idx].createdAt,
+        ownerId: _groups[idx].ownerId,
+        paidSettlementKeys: updatedKeys,
+        paidSettlementNotes: updatedNotes,
+      );
+      notifyListeners();
+    }
+
+    await _firestoreService.markAsPaid(
+      groupId: group.id,
+      debtorId: debtorId,
+      creditorId: creditorId,
+      markedByUserId: user.uid,
+      amount: amount,
+      customKey: key,
+      note: note,
+    );
+  }
+
+  /// Unmark a previously-paid settlement (reopen it).
+  Future<void> unmarkAsPaid({
+    required Group group,
+    required String debtorId,
+    required String creditorId,
+    String? customKey,
+  }) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final key = customKey ?? '${debtorId}_$creditorId';
+    final idx = _groups.indexWhere((g) => g.id == group.id);
+    if (idx != -1) {
+      final updatedKeys =
+          Set<String>.from(_groups[idx].paidSettlementKeys)..remove(key);
+      final updatedNotes =
+          Map<String, String>.from(_groups[idx].paidSettlementNotes)
+            ..remove(key);
+      _groups[idx] = Group(
+        id: _groups[idx].id,
+        name: _groups[idx].name,
+        participants: _groups[idx].participants,
+        expenses: _groups[idx].expenses,
+        createdAt: _groups[idx].createdAt,
+        ownerId: _groups[idx].ownerId,
+        paidSettlementKeys: updatedKeys,
+        paidSettlementNotes: updatedNotes,
+      );
+      notifyListeners();
+    }
+
+    await _firestoreService.unmarkAsPaid(
+      groupId: group.id,
+      debtorId: debtorId,
+      creditorId: creditorId,
+      customKey: key,
+    );
   }
 
   Future<void> addParticipant(

@@ -79,6 +79,27 @@ class FirestoreService {
     }
   }
 
+  // Batch-fetch multiple user documents in parallel (avoids N sequential reads)
+  Future<Map<String, Map<String, dynamic>>> getUserDocumentsBatch(
+    List<String> uids,
+  ) async {
+    if (uids.isEmpty) return {};
+    try {
+      final results = await Future.wait(
+        uids.map((uid) => _db.collection('users').doc(uid).get()),
+      );
+      final Map<String, Map<String, dynamic>> userMap = {};
+      for (final doc in results) {
+        if (doc.exists) {
+          userMap[doc.id] = doc.data() as Map<String, dynamic>;
+        }
+      }
+      return userMap;
+    } catch (e) {
+      return {};
+    }
+  }
+
   // Expose db for direct access if needed
   FirebaseFirestore get db => _db;
 
@@ -100,7 +121,7 @@ class FirestoreService {
 
   Future<void> deleteGroup(String groupId) async {
     await _db.collection('groups').doc(groupId).delete();
-    // Optionally, also delete expenses for this group
+    // Delete expenses for this group
     final expenses = await _db
         .collection('expenses')
         .where('groupId', isEqualTo: groupId)
@@ -108,6 +129,103 @@ class FirestoreService {
     for (final doc in expenses.docs) {
       await doc.reference.delete();
     }
+    // Delete settlements for this group
+    final settlements = await _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('settlements')
+        .get();
+    for (final doc in settlements.docs) {
+      await doc.reference.delete();
+    }
+  }
+
+  // Stream of paid settlement keys for a group (real-time)
+  Stream<Set<String>> getSettlementsStream(String groupId) {
+    return _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('settlements')
+        .snapshots()
+        .map((snap) => snap.docs.map((d) => d.id).toSet());
+  }
+
+  // Fetch paid settlement keys once
+  Future<Set<String>> getSettlementsOnce(String groupId) async {
+    try {
+      final snap = await _db
+          .collection('groups')
+          .doc(groupId)
+          .collection('settlements')
+          .get();
+      return snap.docs.map((d) => d.id).toSet();
+    } catch (_) {
+      return {};
+    }
+  }
+
+  // Fetch notes for all settlements once — returns key → note (empty if no note)
+  Future<Map<String, String>> getSettlementNotesOnce(String groupId) async {
+    try {
+      final snap = await _db
+          .collection('groups')
+          .doc(groupId)
+          .collection('settlements')
+          .get();
+      final notes = <String, String>{};
+      for (final doc in snap.docs) {
+        final note = (doc.data()['note'] as String?)?.trim() ?? '';
+        if (note.isNotEmpty) notes[doc.id] = note;
+      }
+      return notes;
+    } catch (_) {
+      return {};
+    }
+  }
+
+  // Mark a settlement as paid. customKey overrides the default key.
+  Future<void> markAsPaid({
+    required String groupId,
+    required String debtorId,
+    required String creditorId,
+    required String markedByUserId,
+    required double amount,
+    String? customKey,
+    String? note,
+  }) async {
+    final key = customKey ?? '${debtorId}_$creditorId';
+    final data = <String, dynamic>{
+      'debtorId': debtorId,
+      'creditorId': creditorId,
+      'amount': amount,
+      'markedBy': markedByUserId,
+      'paidAt': DateTime.now().toUtc(),
+    };
+    if (note != null && note.trim().isNotEmpty) {
+      data['note'] = note.trim();
+    }
+    await _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('settlements')
+        .doc(key)
+        .set(data);
+  }
+
+  // Unmark a settlement (reopen it)
+  Future<void> unmarkAsPaid({
+    required String groupId,
+    required String debtorId,
+    required String creditorId,
+    String? customKey,
+  }) async {
+    final key = customKey ?? '${debtorId}_$creditorId';
+    await _db
+        .collection('groups')
+        .doc(groupId)
+        .collection('settlements')
+        .doc(key)
+        .delete();
   }
 
   // Add expense

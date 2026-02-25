@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_app_check/firebase_app_check.dart';
+// import 'package:firebase_app_check/firebase_app_check.dart'; // disabled
 import 'services/group_service.dart';
 import 'services/auth_service.dart';
 import 'storage/storage_service.dart';
@@ -59,7 +59,7 @@ void main() async {
     MultiProvider(
       providers: [
         if (firebaseReady) ChangeNotifierProvider(create: (_) => AuthService()),
-        ChangeNotifierProvider(create: (_) => GroupService()..loadGroups()),
+        ChangeNotifierProvider(create: (_) => GroupService()),
       ],
       child: MyApp(firebaseReady: firebaseReady, firebaseError: firebaseError),
     ),
