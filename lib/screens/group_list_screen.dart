@@ -5,6 +5,7 @@ import '../services/group_service.dart';
 import '../services/auth_service.dart';
 import '../models/group.dart';
 import 'group_detail_screen.dart';
+import 'profile_screen.dart';
 
 class GroupListScreen extends StatefulWidget {
   const GroupListScreen({super.key});
@@ -140,11 +141,26 @@ class _GroupListScreenState extends State<GroupListScreen>
                   PopupMenuButton<String>(
                     icon: const Icon(Icons.more_vert),
                     onSelected: (value) {
-                      if (value == 'logout') {
+                      if (value == 'profile') {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                        );
+                      } else if (value == 'logout') {
                         _showLogoutDialog(context);
                       }
                     },
                     itemBuilder: (BuildContext context) => [
+                      const PopupMenuItem<String>(
+                        value: 'profile',
+                        child: Row(
+                          children: [
+                            Icon(Icons.person_outline),
+                            SizedBox(width: 8),
+                            Text('Profile Details'),
+                          ],
+                        ),
+                      ),
                       const PopupMenuItem<String>(
                         value: 'logout',
                         child: Row(

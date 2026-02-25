@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/group.dart';
 import '../models/expense.dart';
 import '../models/participant.dart';
@@ -14,6 +15,7 @@ import '../services/notification_service.dart';
 import 'add_expense_screen.dart';
 import 'settle_up_screen.dart';
 import 'expense_detail_screen.dart';
+import 'profile_screen.dart';
 
 class GroupDetailScreen extends StatefulWidget {
   final Group group;
@@ -27,6 +29,34 @@ class GroupDetailScreen extends StatefulWidget {
 class _GroupDetailScreenState extends State<GroupDetailScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+
+  Future<void> _payViaUPI(String upiId, String payeeName) async {
+    // Default amount 0 or let user enter? Usually better to just open the app
+    // For this screen, we'll just open the app with the ID and Name.
+    final Uri uri = Uri.parse(
+      'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(payeeName)}&cu=INR',
+    );
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No UPI app found or cannot launch payment.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error launching payment: $e')),
+        );
+      }
+    }
+  }
 
   @override
   void initState() {
@@ -1130,72 +1160,227 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       return const Center(child: Text("No participants yet."));
     }
 
-    return ListView.separated(
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUserParticipant = group.participants.firstWhere(
+      (p) => p.userId == currentUserId,
+      orElse: () => Participant(id: '?', name: ''),
+    );
+    final hasSetUPI = currentUserParticipant.upiId != null &&
+        currentUserParticipant.upiId!.isNotEmpty;
+
+    return ListView(
       key: const PageStorageKey<String>('people'),
       padding: const EdgeInsets.all(16),
-      itemCount: group.participants.length,
-      separatorBuilder: (ctx, idx) =>
-          Divider(height: 1, color: Colors.grey[200]),
-      itemBuilder: (context, index) {
-        final person = group.participants[index];
-        bool isLast = index == group.participants.length - 1;
-
-        return Column(
-          children: [
-            ListTile(
-              contentPadding: const EdgeInsets.symmetric(
-                vertical: 8,
-                horizontal: 8,
-              ),
-              leading: CircleAvatar(
-                radius: 24,
-                backgroundColor: Theme.of(context).colorScheme.primaryContainer,
-                child: Text(
-                  person.name.isNotEmpty ? person.name[0].toUpperCase() : '?',
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: Theme.of(context).colorScheme.onPrimaryContainer,
-                  ),
-                ),
-              ),
-              title: Text(
-                person.name,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w600,
-                  fontSize: 16,
-                ),
-              ),
-              subtitle: person.hasContactInfo
-                  ? Text(
-                      person.displayInfo,
-                      style: TextStyle(color: Colors.grey[600], fontSize: 12),
-                    )
-                  : null,
-              trailing: PopupMenuButton<String>(
-                icon: Icon(Icons.more_vert, color: Colors.grey[600]),
-                onSelected: (value) {
-                  if (value == 'edit') {
-                    _showEditParticipantDialog(context, group, person);
-                  } else if (value == 'delete') {
-                    _confirmDeleteParticipant(context, group, person);
-                  }
-                },
-                itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
-                  const PopupMenuItem<String>(
-                    value: 'edit',
-                    child: Text('Edit Name'),
-                  ),
-                  const PopupMenuItem<String>(
-                    value: 'delete',
-                    child: Text('Delete', style: TextStyle(color: Colors.red)),
-                  ),
-                ],
-              ),
+      children: [
+        // ── UPI Setup Reminder ───────────────────────────────
+        if (!hasSetUPI && currentUserId != null)
+          Container(
+            margin: const EdgeInsets.only(bottom: 20),
+            padding: const EdgeInsets.all(16),
+            decoration: BoxDecoration(
+              color: Colors.blue.withOpacity(0.08),
+              borderRadius: BorderRadius.circular(20),
+              border: Border.all(color: Colors.blue.withOpacity(0.2)),
             ),
-            if (isLast) const SizedBox(height: 80), // Padding for FAB
-          ],
-        );
-      },
+            child: Row(
+              children: [
+                Container(
+                  padding: const EdgeInsets.all(10),
+                  decoration: BoxDecoration(
+                    color: Colors.blue.withOpacity(0.15),
+                    shape: BoxShape.circle,
+                  ),
+                  child: const Icon(Icons.account_balance_wallet_outlined,
+                      color: Colors.blue, size: 24),
+                ),
+                const SizedBox(width: 16),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Enable Quick Payments',
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                          color: Colors.blue.shade800,
+                        ),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        'Add your UPI ID to receive payments easily.',
+                        style: TextStyle(
+                          fontSize: 12,
+                          color: Colors.blue.shade700,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton(
+                  onPressed: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const ProfileScreen()),
+                    );
+                  },
+                  child: const Text('SETUP'),
+                ),
+              ],
+            ),
+          ),
+
+        // ── Participants List ────────────────────────────
+        ...group.participants.asMap().entries.map((entry) {
+          final index = entry.key;
+          final person = entry.value;
+          final isOwner = person.userId == group.ownerId;
+          final isMe = person.userId == currentUserId;
+          final hasUPI = person.upiId != null && person.upiId!.isNotEmpty;
+
+          return Column(
+            children: [
+              ListTile(
+                contentPadding: const EdgeInsets.symmetric(
+                  vertical: 8,
+                  horizontal: 8,
+                ),
+                leading: Stack(
+                  children: [
+                    CircleAvatar(
+                      radius: 24,
+                      backgroundColor: isOwner
+                          ? const Color(0xFF005041).withOpacity(0.15)
+                          : Theme.of(context).colorScheme.primaryContainer,
+                      child: Text(
+                        person.name.isNotEmpty
+                            ? person.name[0].toUpperCase()
+                            : '?',
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: isOwner
+                              ? const Color(0xFF005041)
+                              : Theme.of(context).colorScheme.onPrimaryContainer,
+                        ),
+                      ),
+                    ),
+                    if (isOwner)
+                      Positioned(
+                        right: 0,
+                        bottom: 0,
+                        child: Container(
+                          padding: const EdgeInsets.all(2),
+                          decoration: const BoxDecoration(
+                            color: Color(0xFF005041),
+                            shape: BoxShape.circle,
+                          ),
+                          child: const Icon(Icons.star,
+                              size: 10, color: Colors.white),
+                        ),
+                      ),
+                  ],
+                ),
+                title: Row(
+                  children: [
+                    Text(
+                      isMe ? '${person.name} (You)' : person.name,
+                      style: GoogleFonts.outfit(
+                        fontWeight: FontWeight.w600,
+                        fontSize: 16,
+                      ),
+                    ),
+                    if (isOwner) ...[
+                      const SizedBox(width: 8),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                            horizontal: 6, vertical: 2),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFF005041).withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(6),
+                        ),
+                        child: const Text(
+                          'OWNER',
+                          style: TextStyle(
+                            fontSize: 9,
+                            fontWeight: FontWeight.bold,
+                            color: Color(0xFF005041),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
+                subtitle: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    if (person.hasContactInfo)
+                      Text(
+                        person.displayInfo,
+                        style: TextStyle(color: Colors.grey[600], fontSize: 12),
+                      ),
+                    if (hasUPI)
+                      Padding(
+                        padding: const EdgeInsets.only(top: 4),
+                        child: Row(
+                          children: [
+                            Icon(Icons.payment_rounded,
+                                size: 12, color: Colors.blue.shade600),
+                            const SizedBox(width: 4),
+                            Text(
+                              person.upiId!,
+                              style: TextStyle(
+                                fontSize: 11,
+                                color: Colors.blue.shade700,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                ),
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    if (hasUPI && !isMe)
+                      IconButton(
+                        icon: Icon(Icons.account_balance_wallet_rounded,
+                            color: Colors.blue.shade700, size: 24),
+                        tooltip: 'Pay via UPI',
+                        onPressed: () => _payViaUPI(person.upiId!, person.name),
+                      ),
+                    PopupMenuButton<String>(
+                      icon: Icon(Icons.more_vert, color: Colors.grey[600]),
+                      onSelected: (value) {
+                        if (value == 'edit') {
+                          _showEditParticipantDialog(context, group, person);
+                        } else if (value == 'delete') {
+                          _confirmDeleteParticipant(context, group, person);
+                        }
+                      },
+                      itemBuilder: (BuildContext context) =>
+                          <PopupMenuEntry<String>>[
+                        const PopupMenuItem<String>(
+                          value: 'edit',
+                          child: Text('Edit Name'),
+                        ),
+                        const PopupMenuItem<String>(
+                          value: 'delete',
+                          child: Text('Delete',
+                              style: TextStyle(color: Colors.red)),
+                        ),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+              if (index < group.participants.length - 1)
+                Divider(height: 1, color: Colors.grey[200]),
+            ],
+          );
+        }).toList(),
+        const SizedBox(height: 80), // Padding for FAB
+      ],
     );
   }
 

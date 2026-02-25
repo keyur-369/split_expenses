@@ -22,6 +22,9 @@ class Participant {
   @HiveField(5)
   final String? userId; // Firebase UID link (optional)
 
+  @HiveField(6)
+  final String? upiId; // UPI ID for payments
+
   Participant({
     required this.id,
     required this.name,
@@ -29,6 +32,7 @@ class Participant {
     this.phone,
     this.contactId,
     this.userId,
+    this.upiId,
   });
 
   // Helper method to get display info

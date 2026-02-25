@@ -101,6 +101,7 @@ class GroupService extends ChangeNotifier {
                         name: userData['name'] ?? 'Unknown',
                         email: userData['email'],
                         userId: memberId,
+                        upiId: userData['upiId'],
                       );
                     }
                     return Participant(

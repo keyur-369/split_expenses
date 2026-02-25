@@ -23,13 +23,14 @@ class ParticipantAdapter extends TypeAdapter<Participant> {
       phone: fields[3] as String?,
       contactId: fields[4] as String?,
       userId: fields[5] as String?,
+      upiId: fields[6] as String?,
     );
   }
 
   @override
   void write(BinaryWriter writer, Participant obj) {
     writer
-      ..writeByte(6)
+      ..writeByte(7)
       ..writeByte(0)
       ..write(obj.id)
       ..writeByte(1)
@@ -41,7 +42,9 @@ class ParticipantAdapter extends TypeAdapter<Participant> {
       ..writeByte(4)
       ..write(obj.contactId)
       ..writeByte(5)
-      ..write(obj.userId);
+      ..write(obj.userId)
+      ..writeByte(6)
+      ..write(obj.upiId);
   }
 
   @override

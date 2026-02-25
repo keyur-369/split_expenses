@@ -247,4 +247,9 @@ class FirestoreService {
       'createdAt': createdAt.toUtc(),
     });
   }
+
+  // Update user profile data (e.g., name, upiId)
+  Future<void> updateUserProfile(String uid, Map<String, dynamic> data) async {
+    await _db.collection('users').doc(uid).update(data);
+  }
 }

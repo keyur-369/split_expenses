@@ -2,7 +2,9 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/group.dart';
+import '../models/participant.dart';
 import '../services/group_service.dart';
 
 // Structured settlement data (replaces plain strings)
@@ -11,6 +13,7 @@ class SettlementItem {
   final String creditorId;
   final String debtorName;
   final String creditorName;
+  final String? creditorUpiId;
   final double amount;
   final String key; // "${debtorId}_${creditorId}"
 
@@ -19,6 +22,7 @@ class SettlementItem {
     required this.creditorId,
     required this.debtorName,
     required this.creditorName,
+    this.creditorUpiId,
     required this.amount,
   }) : key = '${debtorId}_$creditorId';
 }
@@ -216,11 +220,13 @@ class SettleUpScreen extends StatelessWidget {
   List<SettlementItem> _buildSettlements(GroupService service, Group group) {
     final balances = service.getNetBalances(group);
 
-    // Resolve participant name quickly
-    final nameMap = <String, String>{
-      for (final p in group.participants) p.id: p.name,
-    };
-    String nameOf(String id) => nameMap[id] ?? 'Unknown';
+    // Resolve participant name and UPI ID quickly
+    final Map<String, Participant> pMap = {};
+    for (final p in group.participants) {
+      pMap[p.id] = p;
+    }
+    String nameOf(String id) => pMap[id]?.name ?? 'Unknown';
+    String? upiOf(String id) => pMap[id]?.upiId;
 
     final debtors = <MapEntry<String, double>>[];
     final creditors = <MapEntry<String, double>>[];
@@ -253,6 +259,7 @@ class SettleUpScreen extends StatelessWidget {
           creditorId: creditor.key,
           debtorName: nameOf(debtor.key),
           creditorName: nameOf(creditor.key),
+          creditorUpiId: upiOf(creditor.key),
           amount: amount,
         ),
       );
@@ -351,13 +358,58 @@ class _SummaryHeaderCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            group.name,
-            style: GoogleFonts.outfit(
-              color: Colors.white70,
-              fontSize: 14,
-              fontWeight: FontWeight.w500,
-            ),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                group.name,
+                style: GoogleFonts.outfit(
+                  color: Colors.white70,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+              if (group.ownerId != null &&
+                  FirebaseAuth.instance.currentUser?.uid != group.ownerId)
+                Builder(builder: (context) {
+                  final owner = group.participants.firstWhere(
+                    (p) => p.userId == group.ownerId,
+                    orElse: () => Participant(id: '?', name: ''),
+                  );
+                  if (owner.upiId == null || owner.upiId!.isEmpty) {
+                    return const SizedBox.shrink();
+                  }
+                  return GestureDetector(
+                    onTap: () {
+                      final Uri uri = Uri.parse(
+                        'upi://pay?pa=${owner.upiId}&pn=${Uri.encodeComponent(owner.name)}&cu=INR',
+                      );
+                      launchUrl(uri, mode: LaunchMode.externalApplication);
+                    },
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 8, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withOpacity(0.2),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white30),
+                      ),
+                      child: const Row(
+                        children: [
+                          Icon(Icons.account_balance_wallet,
+                              color: Colors.white, size: 14),
+                          SizedBox(width: 4),
+                          Text('Pay Owner',
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 11,
+                                  fontWeight: FontWeight.bold)),
+                        ],
+                      ),
+                    ),
+                  );
+                }),
+            ],
           ),
           const SizedBox(height: 4),
           Text(
@@ -449,6 +501,34 @@ class _SettlementCard extends StatefulWidget {
 
 class _SettlementCardState extends State<_SettlementCard> {
   bool _loading = false;
+
+  Future<void> _payViaUPI(String upiId, double amount, String payeeName) async {
+    // UPI URL format: upi://pay?pa=UPI_ID&pn=NAME&am=AMOUNT&cu=INR
+    final Uri uri = Uri.parse(
+      'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(payeeName)}&am=${amount.toStringAsFixed(2)}&cu=INR',
+    );
+
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No UPI app found or cannot launch payment.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error launching payment: $e')),
+        );
+      }
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -551,62 +631,114 @@ class _SettlementCardState extends State<_SettlementCard> {
                       ],
                     ],
                   ),
-                  const SizedBox(height: 3),
-                  Text(
-                    'owes ${s.creditorName}',
-                    style: TextStyle(
-                      fontSize: 13,
-                      color: Colors.grey[600],
-                    ),
+                  Row(
+                    children: [
+                      Text(
+                        'owes ${s.creditorName}',
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                      if (s.creditorUpiId != null &&
+                          s.creditorUpiId!.isNotEmpty) ...[
+                        const SizedBox(width: 6),
+                        Icon(Icons.verified_user_rounded,
+                            size: 14, color: Colors.blue.shade300),
+                      ],
+                    ],
                   ),
                   const SizedBox(height: 4),
-                  Text(
-                    '₹${s.amount.toStringAsFixed(2)}',
-                    style: GoogleFonts.outfit(
-                      fontSize: 18,
-                      fontWeight: FontWeight.bold,
-                      color: widget.isPaid ? Colors.green : Colors.red.shade600,
-                      decoration:
-                          widget.isPaid ? TextDecoration.lineThrough : null,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        '₹${s.amount.toStringAsFixed(2)}',
+                        style: GoogleFonts.outfit(
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
+                          color:
+                              widget.isPaid ? Colors.green : Colors.red.shade600,
+                          decoration:
+                              widget.isPaid ? TextDecoration.lineThrough : null,
+                        ),
+                      ),
+                      if (!widget.isPaid &&
+                          (s.creditorUpiId == null ||
+                              s.creditorUpiId!.isEmpty))
+                        Text(
+                          'No UPI set',
+                          style: TextStyle(
+                            fontSize: 10,
+                            color: Colors.orange.shade700,
+                            fontStyle: FontStyle.italic,
+                          ),
+                        ),
+                    ],
                   ),
                 ],
               ),
             ),
 
-            // ─── Action button ───────────────────────────────
-            if (widget.isOwner)
-              _loading
-                  ? const SizedBox(
-                      width: 28,
-                      height: 28,
-                      child: CircularProgressIndicator(strokeWidth: 2.5),
-                    )
-                  : widget.isPaid
-                      ? _ActionButton(
-                          label: 'Reopen',
-                          icon: Icons.undo_rounded,
-                          color: Colors.orange,
-                          onTap: () async {
-                            setState(() => _loading = true);
-                            if (widget.onUnmark != null) {
-                              await widget.onUnmark!();
-                            }
-                            if (mounted) setState(() => _loading = false);
-                          },
+            // ─── Actions ─────────────────────────────────────
+            const SizedBox(width: 8),
+            Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                // 💳 Pay button (if creditor has UPI ID AND current user IS the debtor)
+                if (!widget.isPaid &&
+                    s.creditorUpiId != null &&
+                    s.creditorUpiId!.isNotEmpty &&
+                    FirebaseAuth.instance.currentUser?.uid == s.debtorId)
+                  Padding(
+                    padding: const EdgeInsets.only(right: 8),
+                    child: _ActionButton(
+                      label: 'Pay',
+                      icon: Icons.account_balance_wallet_rounded,
+                      color: Colors.blue.shade700,
+                      onTap: () => _payViaUPI(
+                        s.creditorUpiId!,
+                        s.amount,
+                        s.creditorName,
+                      ),
+                    ),
+                  ),
+
+                // ─── Owner actions (Mark Paid/Reopen) ────────────────
+                if (widget.isOwner)
+                  _loading
+                      ? const SizedBox(
+                          width: 28,
+                          height: 28,
+                          child: CircularProgressIndicator(strokeWidth: 2.5),
                         )
-                      : _ActionButton(
-                          label: 'Mark Paid',
-                          icon: Icons.check_circle_outline,
-                          color: const Color(0xFF005041),
-                          onTap: () async {
-                            setState(() => _loading = true);
-                            if (widget.onMarkPaid != null) {
-                              await widget.onMarkPaid!();
-                            }
-                            if (mounted) setState(() => _loading = false);
-                          },
-                        ),
+                      : widget.isPaid
+                          ? _ActionButton(
+                              label: 'Reopen',
+                              icon: Icons.undo_rounded,
+                              color: Colors.orange,
+                              onTap: () async {
+                                setState(() => _loading = true);
+                                if (widget.onUnmark != null) {
+                                  await widget.onUnmark!();
+                                }
+                                if (mounted) setState(() => _loading = false);
+                              },
+                            )
+                          : _ActionButton(
+                              label: 'Mark Paid',
+                              icon: Icons.check_circle_outline,
+                              color: const Color(0xFF005041),
+                              onTap: () async {
+                                setState(() => _loading = true);
+                                if (widget.onMarkPaid != null) {
+                                  await widget.onMarkPaid!();
+                                }
+                                if (mounted) setState(() => _loading = false);
+                              },
+                            ),
+              ],
+            ),
           ],
         ),
       ),

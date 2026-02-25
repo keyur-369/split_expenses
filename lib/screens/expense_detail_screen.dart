@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../models/expense.dart';
 import '../models/group.dart';
 import '../models/participant.dart';
@@ -25,6 +26,32 @@ class ExpenseDetailScreen extends StatefulWidget {
 
 class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
   final Set<String> _loadingIds = {};
+
+  Future<void> _payViaUPI(String upiId, double amount, String payeeName) async {
+    final Uri uri = Uri.parse(
+      'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(payeeName)}&am=${amount.toStringAsFixed(2)}&cu=INR',
+    );
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No UPI app found or cannot launch payment.'),
+              backgroundColor: Colors.red,
+            ),
+          );
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Error launching payment: $e')),
+        );
+      }
+    }
+  }
 
   // Expense-scoped key: "expenseId:debtorId_payerId"
   String _key(String debtorId) =>
@@ -352,12 +379,12 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
         final isOwner =
             liveGroup.ownerId != null && currentUserId == liveGroup.ownerId;
 
-        final payerName = liveGroup.participants
-            .firstWhere(
-              (p) => p.id == widget.expense.payerId,
-              orElse: () => Participant(id: '?', name: 'Unknown'),
-            )
-            .name;
+        final payerParticipant = liveGroup.participants.firstWhere(
+          (p) => p.id == widget.expense.payerId,
+          orElse: () => Participant(id: '?', name: 'Unknown'),
+        );
+        final payerName = payerParticipant.name;
+        final payerUpiId = payerParticipant.upiId;
 
         final splitAmount = widget.expense.involvedParticipantIds.isNotEmpty
             ? widget.expense.amount /
@@ -704,7 +731,45 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                       ),
                                     ),
 
-                                    // Amount / loading
+                                    // Pay button / Amount / loading
+                                    if (!isPayer &&
+                                        !paid &&
+                                        person.userId == currentUserId &&
+                                        payerUpiId != null &&
+                                        payerUpiId.isNotEmpty)
+                                      Padding(
+                                        padding: const EdgeInsets.only(right: 8),
+                                        child: ElevatedButton.icon(
+                                          onPressed: () => _payViaUPI(
+                                            payerUpiId,
+                                            splitAmount,
+                                            payerName,
+                                          ),
+                                          icon: const Icon(Icons.account_balance_wallet,
+                                              size: 14),
+                                          label: const Text('Pay'),
+                                          style: ElevatedButton.styleFrom(
+                                            backgroundColor: Colors.blue.shade700,
+                                            foregroundColor: Colors.white,
+                                            padding: const EdgeInsets.symmetric(
+                                              horizontal: 12,
+                                              vertical: 4,
+                                            ),
+                                            minimumSize: Size.zero,
+                                            tapTargetSize:
+                                                MaterialTapTargetSize.shrinkWrap,
+                                            textStyle: const TextStyle(
+                                              fontSize: 12,
+                                              fontWeight: FontWeight.bold,
+                                            ),
+                                            shape: RoundedRectangleBorder(
+                                              borderRadius:
+                                                  BorderRadius.circular(8),
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+
                                     if (loading)
                                       const SizedBox(
                                         width: 22,
