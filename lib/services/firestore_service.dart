@@ -22,16 +22,52 @@ class FirestoreService {
   // Lookup userId (uid) by email in users collection
   Future<String?> getUserIdByEmail(String email) async {
     final normalized = email.trim().toLowerCase();
-    if (normalized.isEmpty) return null;
+    if (normalized.isEmpty) {
+      print('⚠️  Empty email provided');
+      return null;
+    }
 
-    final snap = await _db
-        .collection('users')
-        .where('email', isEqualTo: normalized)
-        .limit(1)
-        .get();
+    print('🔍 Looking up user by email: $normalized');
+    print('   Querying collection: users');
+    print('   Query: where email == $normalized');
+    
+    try {
+      final snap = await _db
+          .collection('users')
+          .where('email', isEqualTo: normalized)
+          .limit(1)
+          .get();
 
-    if (snap.docs.isEmpty) return null;
-    return snap.docs.first.id;
+      print('📊 Query completed. Documents found: ${snap.docs.length}');
+      
+      if (snap.docs.isEmpty) {
+        print('❌ No user found with email: $normalized');
+        print('   This means either:');
+        print('   1. The user has not registered yet');
+        print('   2. The email in the database is different (check case/spaces)');
+        print('   3. The user document does not have an "email" field');
+        return null;
+      }
+      
+      final userId = snap.docs.first.id;
+      final userData = snap.docs.first.data() as Map<String, dynamic>;
+      print('✅ Found user with email $normalized');
+      print('   User ID: $userId');
+      print('   User name: ${userData['name'] ?? 'N/A'}');
+      print('   Email in DB: ${userData['email'] ?? 'N/A'}');
+      return userId;
+    } catch (e) {
+      print('❌ Error looking up user by email: $e');
+      print('   Error type: ${e.runtimeType}');
+      if (e.toString().contains('permission-denied')) {
+        print('⚠️  PERMISSION DENIED: Firestore rules are still blocking this query!');
+        print('   Please verify:');
+        print('   1. Rules are published in Firebase Console');
+        print('   2. You are logged in (request.auth != null)');
+        print('   3. Rules allow: allow read: if request.auth != null;');
+      }
+      rethrow; // Re-throw so the caller can handle it
+    }
   }
 
   // Get user document by uid

@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
 import 'services/group_service.dart';
 import 'services/auth_service.dart';
 import 'storage/storage_service.dart';
@@ -18,6 +19,30 @@ void main() async {
 
   try {
     await Firebase.initializeApp();
+    
+    // TEMPORARILY DISABLED: Firebase App Check
+    // Uncomment this after disabling enforcement in Firebase Console
+    // or after registering your debug token
+    /*
+    await FirebaseAppCheck.instance.activate(
+      // For Android, use debug provider in development
+      // In production, use: androidProvider: AndroidProvider.playIntegrity,
+      androidProvider: AndroidProvider.debug,
+      // For iOS, use debug provider in development  
+      // In production, use: appleProvider: AppleProvider.appAttest,
+      appleProvider: AppleProvider.debug,
+    );
+    
+    debugPrint('========================================');
+    debugPrint('🔐 Firebase App Check activated in DEBUG mode');
+    debugPrint('📱 Check Android Logcat for debug token');
+    debugPrint('🔍 Search for: "FirebaseAppCheck" or "Debug token"');
+    debugPrint('========================================');
+    */
+    
+    debugPrint('⚠️ App Check is DISABLED - Users can login now');
+    debugPrint('⚠️ Re-enable App Check after configuring Firebase Console');
+    
     firebaseReady = true;
   } catch (e) {
     firebaseError = e.toString();

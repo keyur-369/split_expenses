@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:intl/intl.dart';
 import 'package:google_fonts/google_fonts.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import '../models/group.dart';
 import '../models/expense.dart';
 import '../models/participant.dart';
@@ -36,14 +37,88 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   // I will copy-paste them from previous file to ensure no functionality is lost, or refactor to separate file ideally.
   // For safety, I'll include them here inline again.
 
-  void _showAddParticipantDialog(BuildContext context) {
+  void _showAddParticipantDialog(BuildContext context, Group group) {
     showDialog(
       context: context,
       builder: (ctx) => AddParticipantDialog(
         onAdd: (name, {email, phone, contactId}) async {
           String? userId;
           if (email != null && email.isNotEmpty) {
-            userId = await FirestoreService().getUserIdByEmail(email);
+            // Check if user is logged in first
+            final currentUser = FirebaseAuth.instance.currentUser;
+            if (currentUser == null) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text(
+                      'You must be logged in to add participants by email.',
+                    ),
+                    backgroundColor: Colors.red,
+                    duration: Duration(seconds: 3),
+                  ),
+                );
+              }
+              return;
+            }
+            
+            debugPrint('👤 Current user: ${currentUser.uid} (${currentUser.email})');
+            
+            // Show loading indicator while looking up user
+            if (context.mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('Looking up user...'),
+                  duration: Duration(seconds: 1),
+                ),
+              );
+            }
+            
+            try {
+              userId = await FirestoreService().getUserIdByEmail(email);
+            } catch (e) {
+              // Handle permission errors
+              if (e.toString().contains('permission-denied')) {
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Database permission error. Please update Firestore security rules to allow email lookup.',
+                      ),
+                      backgroundColor: Colors.red,
+                      duration: Duration(seconds: 5),
+                    ),
+                  );
+                }
+              } else {
+                // Other errors
+                if (context.mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    SnackBar(
+                      content: Text('Error looking up user: ${e.toString()}'),
+                      backgroundColor: Colors.red,
+                      duration: const Duration(seconds: 4),
+                    ),
+                  );
+                }
+              }
+              return; // Don't proceed with adding participant
+            }
+            
+            // If email was provided but user not found, show error
+            if (userId == null) {
+              if (context.mounted) {
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(
+                    content: Text(
+                      'User with email "$email" not found. They need to register first.',
+                    ),
+                    backgroundColor: Colors.orange,
+                    duration: const Duration(seconds: 4),
+                  ),
+                );
+              }
+              return; // Don't add the participant
+            }
           }
 
           // Add locally (and update Firestore members via GroupService)
@@ -51,19 +126,34 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             context,
             listen: false,
           ).addParticipant(
-            widget.group,
+            group,
             name,
             email: email,
             phone: phone,
             contactId: contactId,
             userId: userId,
           );
+          
+          // Show success message
+          if (context.mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+              SnackBar(
+                content: Text('$name added successfully!'),
+                backgroundColor: Colors.green,
+                duration: const Duration(seconds: 2),
+              ),
+            );
+          }
         },
       ),
     );
   }
 
-  void _showEditParticipantDialog(BuildContext context, Participant person) {
+  void _showEditParticipantDialog(
+    BuildContext context,
+    Group group,
+    Participant person,
+  ) {
     final TextEditingController _nameController = TextEditingController(
       text: person.name,
     );
@@ -118,7 +208,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   context,
                   listen: false,
                 ).updateParticipant(
-                  widget.group,
+                  group,
                   person,
                   newName: _nameController.text,
                   email: _emailController.text.isEmpty
@@ -138,7 +228,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-  void _confirmDeleteParticipant(BuildContext context, Participant person) {
+  void _confirmDeleteParticipant(
+    BuildContext context,
+    Group group,
+    Participant person,
+  ) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
@@ -155,7 +249,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               final error = await Provider.of<GroupService>(
                 context,
                 listen: false,
-              ).deleteParticipant(widget.group, person.id);
+              ).deleteParticipant(group, person.id);
 
               if (error != null) {
                 if (context.mounted) {
@@ -173,13 +267,13 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-  void _confirmDeleteGroup(BuildContext context) {
+  void _confirmDeleteGroup(BuildContext context, Group group) {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("Delete Group?"),
         content: Text(
-          "Delete '${widget.group.name}' permanently? This cannot be undone.",
+          "Delete '${group.name}' permanently? This cannot be undone.",
         ),
         actions: [
           TextButton(
@@ -192,7 +286,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
               Provider.of<GroupService>(
                 context,
                 listen: false,
-              ).deleteGroup(widget.group.id);
+              ).deleteGroup(group.id);
               Navigator.pop(ctx); // Close dialog
               Navigator.pop(context); // Go back to Group List
             },
@@ -208,6 +302,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
   Widget build(BuildContext context) {
     return Consumer<GroupService>(
       builder: (context, service, child) {
+        // Always use the latest version of this group from the service
+        final group = service.groups.firstWhere(
+          (g) => g.id == widget.group.id,
+          orElse: () => widget.group,
+        );
+
         return Scaffold(
           appBar: PreferredSize(
             preferredSize: const Size.fromHeight(
@@ -216,7 +316,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             child: AppBar(
               toolbarHeight: 80, // Taller toolbar for title
               title: Text(
-                widget.group.name,
+                group.name,
                 style: GoogleFonts.outfit(
                   fontWeight: FontWeight.bold,
                   fontSize: 28,
@@ -270,7 +370,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       Navigator.push(
                         context,
                         MaterialPageRoute(
-                          builder: (_) => SummaryScreen(group: widget.group),
+                          builder: (_) => SummaryScreen(group: group),
                         ),
                       );
                     },
@@ -297,7 +397,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       color: Colors.redAccent,
                     ),
                     tooltip: "Delete Group",
-                    onPressed: () => _confirmDeleteGroup(context),
+                    onPressed: () => _confirmDeleteGroup(context, group),
                   ),
                 ),
               ],
@@ -365,14 +465,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           body: TabBarView(
             controller: _tabController,
             children: [
-              _buildExpensesTab(service),
-              _buildParticipantsTab(service),
+              _buildExpensesTab(service, group),
+              _buildParticipantsTab(service, group),
             ],
           ),
           floatingActionButton: FloatingActionButton.extended(
             onPressed: () {
               if (_tabController.index == 0) {
-                if (widget.group.participants.isEmpty) {
+                if (group.participants.isEmpty) {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(content: Text("Add participants first!")),
                   );
@@ -381,12 +481,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => AddExpenseScreen(group: widget.group),
+                      builder: (_) => AddExpenseScreen(group: group),
                     ),
                   );
                 }
               } else {
-                _showAddParticipantDialog(context);
+                _showAddParticipantDialog(context, group);
               }
             },
             label: AnimatedBuilder(
@@ -413,8 +513,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
-  Widget _buildExpensesTab(GroupService service) {
-    if (widget.group.expenses.isEmpty) {
+  Widget _buildExpensesTab(GroupService service, Group group) {
+    if (group.expenses.isEmpty) {
       return Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
@@ -446,11 +546,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
       );
     }
 
-    double total = widget.group.expenses.fold(0.0, (sum, e) => sum + e.amount);
+    double total = group.expenses.fold(0.0, (sum, e) => sum + e.amount);
 
     // Group expenses by date
     final Map<String, List<Expense>> groupedExpenses = {};
-    for (var expense in widget.group.expenses) {
+    for (var expense in group.expenses) {
       final dateSlug = DateFormat("yyyyMMdd").format(expense.date);
       if (!groupedExpenses.containsKey(dateSlug)) {
         groupedExpenses[dateSlug] = [];
@@ -532,8 +632,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                           Navigator.push(
                             context,
                             MaterialPageRoute(
-                              builder: (_) =>
-                                  SummaryScreen(group: widget.group),
+                              builder: (_) => SummaryScreen(group: group),
                             ),
                           );
                         },
@@ -585,7 +684,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    "${widget.group.expenses.length} transactions",
+                    "${group.expenses.length} transactions",
                     style: TextStyle(
                       color: Colors.white.withOpacity(0.6),
                       fontSize: 14,
@@ -632,7 +731,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     ),
                   ),
                   ...sortedExpenses.map((expense) {
-                    final payer = widget.group.participants.firstWhere(
+                    final payer = group.participants.firstWhere(
                       (p) => p.id == expense.payerId,
                       orElse: () => Participant(id: 'unknown', name: 'Unknown'),
                     );
@@ -643,14 +742,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         expense: expense,
                         payerName: payer.name,
                         onDelete: () =>
-                            service.deleteExpense(widget.group, expense.id),
+                            service.deleteExpense(group, expense.id),
                         onTap: () {
                           Navigator.push(
                             context,
                             MaterialPageRoute(
                               builder: (_) => ExpenseDetailScreen(
                                 expense: expense,
-                                group: widget.group,
+                                group: group,
                               ),
                             ),
                           );
@@ -678,20 +777,20 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     return DateFormat("MMMM d").format(date).toUpperCase();
   }
 
-  Widget _buildParticipantsTab(GroupService service) {
-    if (widget.group.participants.isEmpty) {
+  Widget _buildParticipantsTab(GroupService service, Group group) {
+    if (group.participants.isEmpty) {
       return const Center(child: Text("No participants yet."));
     }
 
     return ListView.separated(
       key: const PageStorageKey<String>('people'),
       padding: const EdgeInsets.all(16),
-      itemCount: widget.group.participants.length,
+      itemCount: group.participants.length,
       separatorBuilder: (ctx, idx) =>
           Divider(height: 1, color: Colors.grey[200]),
       itemBuilder: (context, index) {
-        final person = widget.group.participants[index];
-        bool isLast = index == widget.group.participants.length - 1;
+        final person = group.participants[index];
+        bool isLast = index == group.participants.length - 1;
 
         return Column(
           children: [
@@ -728,9 +827,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 icon: Icon(Icons.more_vert, color: Colors.grey[600]),
                 onSelected: (value) {
                   if (value == 'edit') {
-                    _showEditParticipantDialog(context, person);
+                    _showEditParticipantDialog(context, group, person);
                   } else if (value == 'delete') {
-                    _confirmDeleteParticipant(context, person);
+                    _confirmDeleteParticipant(context, group, person);
                   }
                 },
                 itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[

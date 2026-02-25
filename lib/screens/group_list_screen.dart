@@ -225,12 +225,15 @@ class _GroupListScreenState extends State<GroupListScreen>
       child: Card(
         clipBehavior: Clip.antiAlias,
         child: InkWell(
-          onTap: () {
-            Navigator.of(context).push(
+          onTap: () async {
+            // Open group details, then refresh groups when coming back
+            await Navigator.of(context).push(
               MaterialPageRoute(
                 builder: (_) => GroupDetailScreen(group: group),
               ),
             );
+            // Ensure list reflects latest participants / expenses from storage / backend
+            Provider.of<GroupService>(context, listen: false).loadGroups();
           },
           onLongPress: () {
             // Re-implement delete dialog with new style?? Or keep simple.

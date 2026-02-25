@@ -89,6 +89,14 @@ class GroupService extends ChangeNotifier {
                       }
                     } catch (e) {
                       debugPrint('Error loading user $memberId: $e');
+                      // Add placeholder even on error to maintain member list
+                      participants.add(
+                        Participant(
+                          id: memberId,
+                          name: 'Unknown User',
+                          userId: memberId,
+                        ),
+                      );
                     }
                   }
 
@@ -255,6 +263,12 @@ class GroupService extends ChangeNotifier {
     // Local (Hive)
     await _storageService.addGroup(newGroup);
 
+    // Optimistically update in-memory list so UI reflects the new group immediately
+    _groups.add(newGroup);
+    // Keep list ordering consistent (newest first)
+    _groups.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    notifyListeners();
+
     // Cloud (Firestore) if logged in
     if (user != null) {
       await _firestoreService.upsertGroup(
@@ -265,8 +279,6 @@ class GroupService extends ChangeNotifier {
         memberIds: [user.uid],
       );
     }
-
-    await loadGroups();
   }
 
   Future<void> deleteGroup(String groupId) async {
@@ -277,10 +289,12 @@ class GroupService extends ChangeNotifier {
     _expenseSubscriptions[groupId]?.cancel();
     _expenseSubscriptions.remove(groupId);
 
+    // Optimistically update in-memory list so UI reflects the deletion immediately
+    _groups.removeWhere((g) => g.id == groupId);
+    notifyListeners();
+
     // Also delete from Firestore
     await _firestoreService.deleteGroup(groupId);
-
-    await loadGroups();
   }
 
   Future<void> addParticipant(
@@ -291,6 +305,8 @@ class GroupService extends ChangeNotifier {
     String? contactId,
     String? userId,
   }) async {
+    debugPrint('➕ Adding participant: $name (email: $email, userId: $userId)');
+    
     final newParticipant = Participant(
       id: const Uuid().v4(),
       name: name,
@@ -299,18 +315,22 @@ class GroupService extends ChangeNotifier {
       contactId: contactId,
       userId: userId,
     );
-    group.participants.add(newParticipant);
-    await group.save(); // HiveObject save
-
-    // Update group members in Firestore if logged in
+    
     final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
+    
+    // Update Firestore first if user is logged in and participant has userId
+    if (user != null && userId != null) {
+      debugPrint('🌐 Adding participant to Firestore (cross-device sync enabled)');
+      
       final memberIds = <String>{
         user.uid,
         ...group.participants
             .where((p) => p.userId != null)
             .map((p) => p.userId!),
+        userId, // Add the new user
       }.toList();
+
+      debugPrint('📝 Updating group members: $memberIds');
 
       await _firestoreService.upsertGroup(
         id: group.id,
@@ -319,9 +339,82 @@ class GroupService extends ChangeNotifier {
         createdAt: group.createdAt,
         memberIds: memberIds,
       );
-    }
+      
+      // Manually fetch the updated group data from Firestore
+      // to ensure we have the latest participant list
+      try {
+        final groupDoc = await FirebaseFirestore.instance
+            .collection('groups')
+            .doc(group.id)
+            .get();
+            
+        if (groupDoc.exists) {
+          final data = groupDoc.data() as Map<String, dynamic>;
+          final updatedMemberIds = List<String>.from(data['members'] ?? []);
+          final updatedParticipants = <Participant>[];
+          
+          debugPrint('🔄 Reloading ${updatedMemberIds.length} participants from Firestore');
+          
+          for (final memberId in updatedMemberIds) {
+            try {
+              final userDoc = await _firestoreService.getUserDocument(memberId);
+              if (userDoc != null && userDoc.exists) {
+                final userData = userDoc.data() as Map<String, dynamic>;
+                updatedParticipants.add(
+                  Participant(
+                    id: memberId,
+                    name: userData['name'] ?? 'Unknown',
+                    email: userData['email'],
+                    userId: memberId,
+                  ),
+                );
+              }
+            } catch (e) {
+              debugPrint('Error loading user $memberId: $e');
+            }
+          }
+          
+          // Update the group with new participants
+          final updatedGroup = Group(
+            id: group.id,
+            name: group.name,
+            participants: updatedParticipants,
+            expenses: group.expenses,
+            createdAt: group.createdAt,
+          );
+          
+          // Save to local storage
+          await _storageService.addGroup(updatedGroup);
+          
+          // Update in-memory list
+          final index = _groups.indexWhere((g) => g.id == group.id);
+          if (index != -1) {
+            _groups[index] = updatedGroup;
+          }
+          
+          debugPrint('✅ Participant added successfully (Firestore + local)');
+          notifyListeners();
+        }
+      } catch (e) {
+        debugPrint('❌ Error reloading group after adding participant: $e');
+      }
+    } else {
+      debugPrint('💾 Adding participant locally only (no cross-device sync)');
+      debugPrint('   Reason: user=${user != null ? "logged in" : "not logged in"}, userId=${userId != null ? "provided" : "null"}');
+      
+      // For local-only participants (no userId), update locally
+      group.participants.add(newParticipant);
+      await group.save();
 
-    notifyListeners();
+      // Keep in-memory list in sync
+      final index = _groups.indexWhere((g) => g.id == group.id);
+      if (index != -1) {
+        _groups[index] = group;
+      }
+      
+      debugPrint('✅ Participant added locally');
+      notifyListeners();
+    }
   }
 
   Future<void> addExpense(
@@ -344,6 +437,12 @@ class GroupService extends ChangeNotifier {
     );
     group.expenses.add(newExpense);
     await group.save();
+
+    // Keep in-memory list in sync
+    final index = _groups.indexWhere((g) => g.id == group.id);
+    if (index != -1) {
+      _groups[index] = group;
+    }
 
     // Also store in Firestore if logged in
     if (user != null) {
@@ -381,6 +480,13 @@ class GroupService extends ChangeNotifier {
   Future<void> deleteExpense(Group group, String expenseId) async {
     group.expenses.removeWhere((e) => e.id == expenseId);
     await group.save();
+
+    // Keep in-memory list in sync
+    final index = _groups.indexWhere((g) => g.id == group.id);
+    if (index != -1) {
+      _groups[index] = group;
+    }
+
     notifyListeners();
   }
 
