@@ -105,6 +105,26 @@ class _GroupListScreenState extends State<GroupListScreen>
       extendBodyBehindAppBar: true,
       body: Consumer<GroupService>(
         builder: (context, service, child) {
+          // Partition groups based on user's net balance
+          final currentUid = Provider.of<AuthService>(context, listen: false).currentUser?.uid;
+
+          final receivingGroups = <Group>[];
+          final sendingGroups = <Group>[];
+          final neutralGroups = <Group>[];
+
+          for (final group in service.groups) {
+            final balance = _getUserBalance(group, currentUid, service);
+            if (balance > 0.01) {
+              receivingGroups.add(group);
+            } else if (balance < -0.01) {
+              sendingGroups.add(group);
+            } else {
+              neutralGroups.add(group);
+            }
+          }
+
+          int animationIndex = 0;
+
           return CustomScrollView(
             slivers: [
               SliverAppBar.large(
@@ -179,19 +199,68 @@ class _GroupListScreenState extends State<GroupListScreen>
                     ),
                   ),
                 )
-              else
-                SliverPadding(
-                  padding: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 8,
+              else ...[
+                if (receivingGroups.isNotEmpty) ...[
+                  _buildSectionHeader("OUTSTANDING RECEIVABLES", Colors.green),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildGroupCard(
+                          context,
+                          receivingGroups[index],
+                          animationIndex++,
+                          service,
+                          currentUid,
+                        ),
+                        childCount: receivingGroups.length,
+                      ),
+                    ),
                   ),
-                  sliver: SliverList(
-                    delegate: SliverChildBuilderDelegate((context, index) {
-                      final group = service.groups[index];
-                      return _buildGroupCard(context, group, index, service);
-                    }, childCount: service.groups.length),
+                ],
+                if (sendingGroups.isNotEmpty) ...[
+                  _buildSectionHeader("OUTSTANDING PAYABLES", Colors.red),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildGroupCard(
+                          context,
+                          sendingGroups[index],
+                          animationIndex++,
+                          service,
+                          currentUid,
+                        ),
+                        childCount: sendingGroups.length,
+                      ),
+                    ),
                   ),
-                ),
+                ],
+                if (neutralGroups.isNotEmpty) ...[
+                  _buildSectionHeader(
+                    (receivingGroups.isEmpty && sendingGroups.isEmpty)
+                        ? "MY GROUPS"
+                        : "SETTLED / OTHERS",
+                    Colors.grey,
+                  ),
+                  SliverPadding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                    sliver: SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                        (context, index) => _buildGroupCard(
+                          context,
+                          neutralGroups[index],
+                          animationIndex++,
+                          service,
+                          currentUid,
+                        ),
+                        childCount: neutralGroups.length,
+                      ),
+                    ),
+                  ),
+                ],
+                const SliverToBoxAdapter(child: SizedBox(height: 100)),
+              ],
             ],
           );
         },
@@ -199,12 +268,62 @@ class _GroupListScreenState extends State<GroupListScreen>
     );
   }
 
+  Widget _buildSectionHeader(String title, Color color) {
+    return SliverToBoxAdapter(
+      child: Padding(
+        padding: const EdgeInsets.only(left: 4, top: 24, bottom: 12),
+        child: Row(
+          children: [
+            Container(
+              width: 4,
+              height: 16,
+              decoration: BoxDecoration(
+                color: color,
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(width: 8),
+            Text(
+              title,
+              style: TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.bold,
+                letterSpacing: 1.2,
+                color: Colors.grey[600],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  double _getUserBalance(Group group, String? currentUid, GroupService service) {
+    if (currentUid == null) return 0.0;
+    final balances = service.getNetBalances(group);
+    
+    // Find the participant ID for the current user
+    String? userParticipantId;
+    for (var p in group.participants) {
+      if (p.userId == currentUid || p.id == currentUid) {
+        userParticipantId = p.id;
+        break;
+      }
+    }
+    
+    if (userParticipantId == null) return 0.0;
+    return balances[userParticipantId] ?? 0.0;
+  }
+
   Widget _buildGroupCard(
     BuildContext context,
     Group group,
     int index,
     GroupService service,
+    String? currentUid,
   ) {
+    final balance = _getUserBalance(group, currentUid, service);
+    
     // Staggered animation effect
     final double start = (index * 0.1).clamp(0.0, 1.0);
     final animation = Tween<double>(begin: 0.0, end: 1.0).animate(
@@ -224,20 +343,14 @@ class _GroupListScreenState extends State<GroupListScreen>
       },
       child: Card(
         clipBehavior: Clip.antiAlias,
+        margin: const EdgeInsets.only(bottom: 12),
         child: InkWell(
           onTap: () async {
-            // Open group details, then refresh groups when coming back
             await Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => GroupDetailScreen(group: group),
-              ),
+              MaterialPageRoute(builder: (_) => GroupDetailScreen(group: group)),
             );
-            // Ensure list reflects latest participants / expenses from storage / backend
-            Provider.of<GroupService>(context, listen: false).loadGroups();
           },
           onLongPress: () {
-            // Re-implement delete dialog with new style?? Or keep simple.
-            // Using existing logic for consistency but maybe modernized.
             showDialog(
               context: context,
               builder: (ctx) => AlertDialog(
@@ -261,26 +374,24 @@ class _GroupListScreenState extends State<GroupListScreen>
             );
           },
           child: Container(
-            height: 120,
+            height: 125,
             decoration: BoxDecoration(
               gradient: LinearGradient(
                 colors: [
                   Theme.of(context).colorScheme.surface,
-                  Theme.of(
-                    context,
-                  ).colorScheme.surfaceContainerHighest.withOpacity(0.3),
+                  Theme.of(context).colorScheme.surfaceContainerHighest.withOpacity(0.3),
                 ],
                 begin: Alignment.topLeft,
                 end: Alignment.bottomRight,
               ),
             ),
-            padding: const EdgeInsets.all(20),
+            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
             child: Row(
               children: [
                 // Icon / Avatar
                 Container(
-                  width: 60,
-                  height: 60,
+                  width: 56,
+                  height: 56,
                   decoration: BoxDecoration(
                     color: Theme.of(context).colorScheme.primaryContainer,
                     borderRadius: BorderRadius.circular(16),
@@ -289,14 +400,14 @@ class _GroupListScreenState extends State<GroupListScreen>
                     child: Text(
                       group.name.isNotEmpty ? group.name[0].toUpperCase() : '?',
                       style: TextStyle(
-                        fontSize: 28,
+                        fontSize: 24,
                         fontWeight: FontWeight.bold,
                         color: Theme.of(context).colorScheme.primary,
                       ),
                     ),
                   ),
                 ),
-                const SizedBox(width: 20),
+                const SizedBox(width: 16),
                 // Info
                 Expanded(
                   child: Column(
@@ -306,22 +417,36 @@ class _GroupListScreenState extends State<GroupListScreen>
                       Text(
                         group.name,
                         style: const TextStyle(
-                          fontSize: 18,
+                          fontSize: 17,
                           fontWeight: FontWeight.bold,
                         ),
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       ),
-                      const SizedBox(height: 6),
+                      const SizedBox(height: 4),
                       Text(
                         "${group.expenses.length} expenses • ${group.participants.length} people",
                         style: TextStyle(color: Colors.grey[600], fontSize: 13),
                       ),
-                      const SizedBox(height: 4),
-                      Text(
-                        "Created ${DateFormat.MMMd().format(group.createdAt)}",
-                        style: TextStyle(color: Colors.grey[400], fontSize: 11),
-                      ),
+                      if (balance.abs() > 0.01) ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          balance > 0 
+                              ? "You receive \$${balance.toStringAsFixed(2)}" 
+                              : "You owe \$${(-balance).toStringAsFixed(2)}",
+                          style: TextStyle(
+                            color: balance > 0 ? Colors.green[700] : Colors.red[700],
+                            fontWeight: FontWeight.w600,
+                            fontSize: 13,
+                          ),
+                        ),
+                      ] else ...[
+                        const SizedBox(height: 4),
+                        Text(
+                          "Settled up",
+                          style: TextStyle(color: Colors.grey[400], fontSize: 11),
+                        ),
+                      ],
                     ],
                   ),
                 ),

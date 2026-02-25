@@ -8,6 +8,7 @@ import '../models/participant.dart';
 import '../models/expense.dart';
 import '../storage/storage_service.dart';
 import 'firestore_service.dart';
+import 'notification_service.dart';
 
 class GroupService extends ChangeNotifier {
   final StorageService _storageService = StorageService();
@@ -31,9 +32,15 @@ class GroupService extends ChangeNotifier {
     super.dispose();
   }
 
-  Future<void> loadGroups() async {
-    _isLoading = true;
-    notifyListeners();
+  Future<void> loadGroups({bool forceRefresh = false}) async {
+    // If already listening and not forced, don't restart everything
+    if (_groupsSubscription != null && !forceRefresh) return;
+
+    // Only show hard loading states if we don't have any data yet
+    if (_groups.isEmpty) {
+      _isLoading = true;
+      notifyListeners();
+    }
 
     final user = FirebaseAuth.instance.currentUser;
 
@@ -358,6 +365,31 @@ class GroupService extends ChangeNotifier {
       customKey: key,
       note: note,
     );
+
+    // Notify the debtor that their payment was confirmed
+    try {
+      // Find debtor's Firebase UID
+      final debtorParticipant = group.participants.firstWhere(
+        (p) => p.id == debtorId,
+        orElse: () => Participant(id: debtorId, name: 'Unknown'),
+      );
+      final debtorUserId = debtorParticipant.userId;
+
+      if (debtorUserId != null && debtorUserId != user.uid) {
+        final creditorDoc = await _firestoreService.getUserDocument(user.uid);
+        final creditorName = (creditorDoc?.data() as Map<String, dynamic>?)?['name'] as String? ?? 'Someone';
+        await NotificationService.sendPaymentConfirmedNotification(
+          groupName: group.name,
+          groupId: group.id,
+          confirmedByName: creditorName,
+          amount: amount,
+          debtorUserId: debtorUserId,
+          note: note,
+        );
+      }
+    } catch (e) {
+      debugPrint('⚠️ Payment notification skipped: $e');
+    }
   }
 
   /// Unmark a previously-paid settlement (reopen it).
@@ -441,6 +473,20 @@ class GroupService extends ChangeNotifier {
         createdAt: group.createdAt,
         memberIds: memberIds,
       );
+
+      // Send notification to the newly added member
+      try {
+        final adderDoc = await _firestoreService.getUserDocument(user.uid);
+        final adderName = (adderDoc?.data() as Map<String, dynamic>?)?['name'] as String? ?? 'Someone';
+        await NotificationService.sendMemberAddedNotification(
+          groupName: group.name,
+          groupId: group.id,
+          addedByName: adderName,
+          newMemberUserIds: [userId],
+        );
+      } catch (e) {
+        debugPrint('⚠️ Member notification skipped: $e');
+      }
       
       // Manually fetch the updated group data from Firestore
       // to ensure we have the latest participant list
@@ -574,6 +620,44 @@ class GroupService extends ChangeNotifier {
         groupId: group.id,
         createdAt: now,
       );
+
+      // Send notification to all split members (except the payer)
+      try {
+        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+        debugPrint('📢 [GroupService] addExpense — building notification…');
+        debugPrint('   paidByUserId    : $paidByUserId');
+        debugPrint('   splitWithUserIds: $splitWithUserIds');
+
+        final payerDoc = await _firestoreService.getUserDocument(user.uid);
+        final payerName = (payerDoc?.data() as Map<String, dynamic>?)?['name'] as String? ?? 'Someone';
+        debugPrint('   payerName       : $payerName');
+
+        // Only notify UIDs that are real Firebase user IDs (not local participant IDs)
+        final notifyUserIds = splitWithUserIds
+            .where((uid) => uid.length > 10) // real Firebase UIDs are long
+            .toList();
+        debugPrint('   notifyUserIds (filtered, len>10): $notifyUserIds');
+
+        if (notifyUserIds.isEmpty) {
+          debugPrint('   ⚠️  notifyUserIds is empty — no notification sent.');
+          debugPrint('   Tip: Participants must be linked to Firebase accounts.');
+        } else {
+          await NotificationService.sendExpenseNotification(
+            groupName: group.name,
+            groupId: group.id,
+            expenseId: newExpense.id,
+            expenseTitle: title,
+            totalAmount: amount,
+            payerName: payerName,
+            payerUserId: paidByUserId,
+            splitUserIds: notifyUserIds,
+            splitCount: splitWithUserIds.length,
+          );
+        }
+        debugPrint('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      } catch (e) {
+        debugPrint('⚠️ Expense notification skipped: $e');
+      }
     }
 
     notifyListeners();

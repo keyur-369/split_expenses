@@ -5,6 +5,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 // import 'package:firebase_app_check/firebase_app_check.dart'; // disabled
 import 'services/group_service.dart';
 import 'services/auth_service.dart';
+import 'services/notification_service.dart';
 import 'storage/storage_service.dart';
 import 'screens/group_list_screen.dart';
 import 'screens/login_screen.dart';
@@ -19,36 +20,31 @@ void main() async {
 
   try {
     await Firebase.initializeApp();
-    
-    // TEMPORARILY DISABLED: Firebase App Check
-    // Uncomment this after disabling enforcement in Firebase Console
-    // or after registering your debug token
-    /*
-    await FirebaseAppCheck.instance.activate(
-      // For Android, use debug provider in development
-      // In production, use: androidProvider: AndroidProvider.playIntegrity,
-      androidProvider: AndroidProvider.debug,
-      // For iOS, use debug provider in development  
-      // In production, use: appleProvider: AppleProvider.appAttest,
-      appleProvider: AppleProvider.debug,
-    );
-    
-    debugPrint('========================================');
-    debugPrint('🔐 Firebase App Check activated in DEBUG mode');
-    debugPrint('📱 Check Android Logcat for debug token');
-    debugPrint('🔍 Search for: "FirebaseAppCheck" or "Debug token"');
-    debugPrint('========================================');
-    */
-    
+
     debugPrint('⚠️ App Check is DISABLED - Users can login now');
     debugPrint('⚠️ Re-enable App Check after configuring Firebase Console');
-    
+
     firebaseReady = true;
   } catch (e) {
     firebaseError = e.toString();
     // Firebase not configured yet - app will still work locally (without login)
     debugPrint('Firebase initialization error: $e');
     debugPrint('Please set up Firebase to use authentication');
+  }
+
+  // Initialize push notifications in a SEPARATE try-catch.
+  // This ensures a MissingPluginException (which happens on hot-restart or
+  // when the native plugin isn't yet compiled into the APK) never prevents
+  // Firebase / Auth from working.
+  if (firebaseReady) {
+    try {
+      await NotificationService.initialize();
+    } catch (e) {
+      // Non-fatal: notifications won't work until app is fully restarted
+      // (flutter run, not hot-restart) so the native plugin initializes.
+      debugPrint('⚠️ Push notification init skipped: $e');
+      debugPrint('👉 Do a full "flutter run" (not hot-restart) to activate notifications.');
+    }
   }
 
   // Initialize storage

@@ -1,50 +1,65 @@
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
-    
-    // Users collection
-    // Allow authenticated users to read any user document (needed for email lookup)
-    // Users can only write to their own document
+
+    // =========================
+    // USERS & NOTIFICATIONS
+    // =========================
     match /users/{userId} {
-      // Allow any authenticated user to read user documents
-      // This is needed for the email lookup feature when adding participants
       allow read: if request.auth != null;
-      
-      // Only allow users to create/update their own document
-      allow create, update: if request.auth != null && request.auth.uid == userId;
-      
-      // Only allow users to delete their own document
-      allow delete: if request.auth != null && request.auth.uid == userId;
+
+      allow create, update: if request.auth != null &&
+                            request.auth.uid == userId;
+
+      allow delete: if request.auth != null &&
+                    request.auth.uid == userId;
+
+      // Notifications Subcollection
+      // Allow any authenticated user to create a notification for another user
+      // Only allow the user themselves to read/update their own notifications
+      match /notifications/{notifId} {
+        allow read, update, delete: if request.auth != null && request.auth.uid == userId;
+        allow create: if request.auth != null;
+      }
     }
-    
-    // Groups collection
+
+    // =========================
+    // GROUPS COLLECTION
+    // =========================
     match /groups/{groupId} {
-      // Allow read if user is a member of the group
-      allow read: if request.auth != null && 
+
+      // Allow read if user is group member
+      allow read: if request.auth != null &&
                      request.auth.uid in resource.data.members;
-      
-      // Allow update if user is a member of the group
-      allow update: if request.auth != null && 
+
+      // Allow update if user is group member
+      allow update: if request.auth != null &&
                        request.auth.uid in resource.data.members;
-      
-      // Allow create if user is authenticated (they'll be added as a member)
+
+      // Allow create if authenticated
       allow create: if request.auth != null;
-      
-      // Allow delete if user is the owner
-      allow delete: if request.auth != null && 
+
+      // Allow delete only if owner
+      allow delete: if request.auth != null &&
                        request.auth.uid == resource.data.ownerId;
     }
-    
-    // Expenses collection
-    match /expenses/{expenseId} {
-      // Allow read if user is authenticated
-      // (We could make this more restrictive by checking group membership,
-      // but that would require an additional read operation)
-      allow read: if request.auth != null;
-      
-      // Allow create/update/delete if user is authenticated
-      // (The app logic ensures users can only modify expenses in their groups)
-      allow create, update, delete: if request.auth != null;
+
+    // =========================
+    // SETTLEMENTS SUBCOLLECTION
+    // =========================
+    match /groups/{groupId}/settlements/{settlementId} {
+
+      allow read, write: if request.auth != null &&
+        request.auth.uid in
+        get(/databases/$(database)/documents/groups/$(groupId)).data.members;
     }
+
+    // =========================
+    // EXPENSES COLLECTION
+    // =========================
+    match /expenses/{expenseId} {
+      allow read, write: if request.auth != null;
+    }
+
   }
 }

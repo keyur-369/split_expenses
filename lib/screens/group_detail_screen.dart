@@ -10,6 +10,7 @@ import '../services/group_service.dart';
 import '../widgets/expense_tile.dart';
 import '../widgets/add_participant_dialog.dart';
 import '../services/firestore_service.dart';
+import '../services/notification_service.dart';
 import 'add_expense_screen.dart';
 import 'settle_up_screen.dart';
 import 'expense_detail_screen.dart';
@@ -282,13 +283,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           ),
           TextButton(
             onPressed: () {
-              // Delete logic
               Provider.of<GroupService>(
                 context,
                 listen: false,
               ).deleteGroup(group.id);
-              Navigator.pop(ctx); // Close dialog
-              Navigator.pop(context); // Go back to Group List
+              Navigator.pop(ctx);
+              Navigator.pop(context);
             },
             style: TextButton.styleFrom(foregroundColor: Colors.red),
             child: const Text("Delete"),
@@ -296,6 +296,310 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
         ],
       ),
     );
+  }
+
+  // ─────────────────────────────────────────────────────────────
+  // Payment Reminder
+  // ─────────────────────────────────────────────────────────────
+
+  /// Shows a bottom sheet so the owner can choose (or type) a reminder message
+  /// and send it to all members who still owe money.
+  void _showReminderSheet(BuildContext context, Group group) {
+    final TextEditingController _customController = TextEditingController();
+    bool _sending = false;
+
+    final List<String> _quickMessages = [
+      '⏰ Hey! Don\'t forget to pay your split in "${group.name}".',
+      '💸 Friendly reminder: Your payment is pending in "${group.name}". Please settle up!',
+      '🙏 Please pay your share in "${group.name}" at your earliest convenience.',
+      '💰 Just a nudge — you still owe money in "${group.name}". Pay when you can!',
+    ];
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setModalState) => Container(
+          padding: EdgeInsets.only(
+            bottom: MediaQuery.of(ctx).viewInsets.bottom + 24,
+            top: 24,
+            left: 20,
+            right: 20,
+          ),
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+            boxShadow: [
+              BoxShadow(
+                color: Colors.black.withOpacity(0.15),
+                blurRadius: 20,
+              )
+            ],
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              // Handle bar
+              Center(
+                child: Container(
+                  width: 40,
+                  height: 4,
+                  margin: const EdgeInsets.only(bottom: 20),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[300],
+                    borderRadius: BorderRadius.circular(2),
+                  ),
+                ),
+              ),
+
+              // Header
+              Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF005041).withOpacity(0.1),
+                      shape: BoxShape.circle,
+                    ),
+                    child: const Icon(
+                      Icons.notifications_active_rounded,
+                      color: Color(0xFF005041),
+                      size: 24,
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Send Payment Reminder',
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                        ),
+                      ),
+                      Text(
+                        'Notify members who owe money',
+                        style: TextStyle(color: Colors.grey[500], fontSize: 13),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+
+              const SizedBox(height: 20),
+
+              // Quick message chips
+              Text(
+                'Quick Messages',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 8),
+              Wrap(
+                spacing: 8,
+                runSpacing: 8,
+                children: _quickMessages.map((msg) {
+                  return GestureDetector(
+                    onTap: () => setModalState(
+                      () => _customController.text = msg,
+                    ),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 8,
+                      ),
+                      decoration: BoxDecoration(
+                        color: const Color(0xFF005041).withOpacity(0.08),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: const Color(0xFF005041).withOpacity(0.2),
+                        ),
+                      ),
+                      child: Text(
+                        msg.substring(0, msg.length > 40 ? 40 : msg.length) +
+                            (msg.length > 40 ? '…' : ''),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          color: Color(0xFF005041),
+                          fontWeight: FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  );
+                }).toList(),
+              ),
+
+              const SizedBox(height: 16),
+
+              // Custom message field
+              Text(
+                'Or type a custom message',
+                style: TextStyle(
+                  fontWeight: FontWeight.w600,
+                  fontSize: 13,
+                  color: Colors.grey[600],
+                ),
+              ),
+              const SizedBox(height: 8),
+              TextField(
+                controller: _customController,
+                maxLines: 3,
+                decoration: InputDecoration(
+                  hintText: 'Write your reminder here…',
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(16),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.all(14),
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Send Button
+              SizedBox(
+                width: double.infinity,
+                child: ElevatedButton.icon(
+                  onPressed: _sending
+                      ? null
+                      : () async {
+                          final msg = _customController.text.trim();
+                          if (msg.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Please enter or select a message.'),
+                              ),
+                            );
+                            return;
+                          }
+                          setModalState(() => _sending = true);
+                          await _sendPaymentReminder(group, msg);
+                          if (ctx.mounted) Navigator.pop(ctx);
+                        },
+                  icon: _sending
+                      ? const SizedBox(
+                          width: 18,
+                          height: 18,
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
+                        )
+                      : const Icon(Icons.send_rounded, size: 18),
+                  label: Text(_sending ? 'Sending…' : 'Send Reminder'),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: const Color(0xFF005041),
+                    foregroundColor: Colors.white,
+                    padding: const EdgeInsets.symmetric(vertical: 16),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                    ),
+                    textStyle: const TextStyle(
+                      fontWeight: FontWeight.bold,
+                      fontSize: 16,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Computes who still owes money in this group and sends them a reminder.
+  Future<void> _sendPaymentReminder(Group group, String message) async {
+    final currentUser = FirebaseAuth.instance.currentUser;
+    if (currentUser == null) return;
+
+    try {
+      // Collect debtors — participants who owe money (net negative balance)
+      // across all unpaid expenses, and have a linked Firebase userId
+      final Map<String, double> owes = {}; // participantId -> amount owed
+
+      for (final expense in group.expenses) {
+        final splitCount = expense.involvedParticipantIds.length;
+        if (splitCount == 0) continue;
+        final share = expense.amount / splitCount;
+
+        for (final pid in expense.involvedParticipantIds) {
+          if (pid == expense.payerId) continue;
+          final key = '${expense.id}:${pid}_${expense.payerId}';
+          final alreadyPaid = group.paidSettlementKeys.contains(key);
+          if (!alreadyPaid) {
+            owes[pid] = (owes[pid] ?? 0) + share;
+          }
+        }
+      }
+
+      // Map participant IDs → Firebase UIDs
+      final List<String> debtorUids = [];
+      for (final pid in owes.keys) {
+        final participant = group.participants.firstWhere(
+          (p) => p.id == pid,
+          orElse: () => Participant(id: pid, name: ''),
+        );
+        if (participant.userId != null && participant.userId!.isNotEmpty) {
+          debtorUids.add(participant.userId!);
+        }
+      }
+
+      if (debtorUids.isEmpty) {
+        if (mounted) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No members with outstanding balances found, or no linked accounts.'),
+              duration: Duration(seconds: 3),
+            ),
+          );
+        }
+        return;
+      }
+
+      // Fetch owner name
+      final ownerDoc = await FirestoreService().getUserDocument(currentUser.uid);
+      final ownerName = (ownerDoc?.data() as Map<String, dynamic>?)?['name'] as String? ?? 'Group Owner';
+
+      // Send notification to each debtor
+      await NotificationService.sendReminderNotification(
+        groupName: group.name,
+        groupId: group.id,
+        senderName: ownerName,
+        message: message,
+        targetUserIds: debtorUids,
+      );
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              '✅ Reminder sent to ${debtorUids.length} member(s)!',
+            ),
+            backgroundColor: const Color(0xFF005041),
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    } catch (e) {
+      debugPrint('❌ Error sending reminder: $e');
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to send reminder: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    }
   }
 
   @override
@@ -347,6 +651,27 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 ),
               ),
               actions: [
+                // 🔔 Reminder bell — only for group owner
+                if (FirebaseAuth.instance.currentUser?.uid == group.ownerId)
+                  Container(
+                    margin: const EdgeInsets.only(right: 4),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFF005041).withOpacity(0.1),
+                      shape: BoxShape.circle,
+                      border: Border.all(
+                        color: const Color(0xFF005041).withOpacity(0.2),
+                      ),
+                    ),
+                    child: IconButton(
+                      icon: const Icon(
+                        Icons.notifications_active_rounded,
+                        size: 20,
+                        color: Color(0xFF005041),
+                      ),
+                      tooltip: 'Send Payment Reminder',
+                      onPressed: () => _showReminderSheet(context, group),
+                    ),
+                  ),
                 Container(
                   margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
