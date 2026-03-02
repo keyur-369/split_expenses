@@ -18,7 +18,9 @@ class AppTheme {
         onPrimaryContainer: const Color(0xFF003D33), // Dark Text
         surface: const Color(0xFFF8F9FA), // Very light grey surface
       ),
-      scaffoldBackgroundColor: const Color(0xFFFFFFFF), // Clean White background
+      scaffoldBackgroundColor: const Color(
+        0xFFFFFFFF,
+      ), // Clean White background
       textTheme: GoogleFonts.outfitTextTheme(ThemeData.light().textTheme),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
@@ -35,13 +37,18 @@ class AppTheme {
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
         color: Colors.white,
-        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0), // Full width or controlled margin
+        margin: const EdgeInsets.symmetric(
+          vertical: 8,
+          horizontal: 0,
+        ), // Full width or controlled margin
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
         backgroundColor: const Color(0xFFA5F2E1), // Bright Mint
         foregroundColor: const Color(0xFF004D40), // Dark Teal text
         elevation: 4,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(50)), // Pill shape enforced
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(50),
+        ), // Pill shape enforced
       ),
       elevatedButtonTheme: ElevatedButtonThemeData(
         style: ElevatedButton.styleFrom(
@@ -49,8 +56,13 @@ class AppTheme {
           foregroundColor: Colors.white,
           elevation: 0,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          textStyle: GoogleFonts.outfit(fontSize: 16, fontWeight: FontWeight.w600),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(16),
+          ),
+          textStyle: GoogleFonts.outfit(
+            fontSize: 16,
+            fontWeight: FontWeight.w600,
+          ),
         ),
       ),
       inputDecorationTheme: InputDecorationTheme(
@@ -70,39 +82,6 @@ class AppTheme {
         ),
         contentPadding: const EdgeInsets.all(20),
         hintStyle: TextStyle(color: Colors.grey[400]),
-      ),
-    );
-  }
-
-  static ThemeData get darkTheme {
-    return ThemeData(
-      useMaterial3: true,
-      brightness: Brightness.dark,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: primaryColor,
-        brightness: Brightness.dark,
-        surface: const Color(0xFF1A1C18),
-      ),
-      scaffoldBackgroundColor: const Color(0xFF111411),
-      textTheme: GoogleFonts.outfitTextTheme(ThemeData.dark().textTheme),
-      appBarTheme: const AppBarTheme(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        centerTitle: false,
-      ),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        color: const Color(0xFF1E2320),
-        margin: const EdgeInsets.symmetric(vertical: 8, horizontal: 0),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: const Color(0xFF1E2320),
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(16),
-          borderSide: BorderSide.none,
-        ),
       ),
     );
   }

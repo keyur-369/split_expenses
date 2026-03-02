@@ -43,7 +43,9 @@ void main() async {
       // Non-fatal: notifications won't work until app is fully restarted
       // (flutter run, not hot-restart) so the native plugin initializes.
       debugPrint('⚠️ Push notification init skipped: $e');
-      debugPrint('👉 Do a full "flutter run" (not hot-restart) to activate notifications.');
+      debugPrint(
+        '👉 Do a full "flutter run" (not hot-restart) to activate notifications.',
+      );
     }
   }
 
@@ -74,8 +76,7 @@ class MyApp extends StatelessWidget {
       title: 'Mini Splitwise',
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      themeMode: ThemeMode.system,
+      themeMode: ThemeMode.light,
       home: AuthWrapper(
         firebaseReady: firebaseReady,
         firebaseError: firebaseError,
