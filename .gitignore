@@ -47,3 +47,7 @@ app.*.map.json
 # Release builds (uploaded separately to GitHub Releases)
 releases/*.apk
 releases/*.aab
+
+# App signing files
+android/key.properties
+*.jks
