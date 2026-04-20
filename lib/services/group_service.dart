@@ -530,6 +530,9 @@ class GroupService extends ChangeNotifier {
             participants: updatedParticipants,
             expenses: group.expenses,
             createdAt: group.createdAt,
+            ownerId: group.ownerId,
+            paidSettlementKeys: group.paidSettlementKeys,
+            paidSettlementNotes: group.paidSettlementNotes,
           );
           
           // Save to local storage
@@ -674,6 +677,15 @@ class GroupService extends ChangeNotifier {
       _groups[index] = group;
     }
 
+    // Also delete from Firestore if logged in
+    if (FirebaseAuth.instance.currentUser != null) {
+      try {
+        await _firestoreService.deleteExpense(expenseId);
+      } catch (e) {
+        debugPrint('⚠️  Could not delete expense from Firestore: $e');
+      }
+    }
+
     notifyListeners();
   }
 
@@ -775,7 +787,7 @@ class GroupService extends ChangeNotifier {
           .name;
 
       settlements.add(
-        "$debtorName owes $creditorName \$${amount.toStringAsFixed(2)}",
+        "$debtorName owes $creditorName ₹${amount.toStringAsFixed(2)}",
       );
 
       // Adjust remaining
@@ -829,9 +841,31 @@ class GroupService extends ChangeNotifier {
       return "Cannot delete: Participant is part of existing expenses.";
     }
 
+    // Capture userId before removing from list
+    final participant = group.participants.firstWhere(
+      (p) => p.id == participantId,
+      orElse: () => Participant(id: participantId, name: ''),
+    );
+    final participantUserId = participant.userId;
+
     group.participants.removeWhere((p) => p.id == participantId);
     await group.save();
     notifyListeners();
+
+    // Sync removal to Firestore if participant has a Firebase account
+    if (FirebaseAuth.instance.currentUser != null &&
+        participantUserId != null &&
+        participantUserId.isNotEmpty) {
+      try {
+        await _firestoreService.removeGroupMember(
+          groupId: group.id,
+          userId: participantUserId,
+        );
+      } catch (e) {
+        debugPrint('⚠️  Could not remove member from Firestore: $e');
+      }
+    }
+
     return null; // Success
   }
 }

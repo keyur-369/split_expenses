@@ -6,6 +6,7 @@ import 'package:url_launcher/url_launcher.dart';
 import '../models/group.dart';
 import '../models/participant.dart';
 import '../services/group_service.dart';
+import '../widgets/upi_payment_sheet.dart';
 
 // Structured settlement data (replaces plain strings)
 class SettlementItem {
@@ -381,10 +382,13 @@ class _SummaryHeaderCard extends StatelessWidget {
                   }
                   return GestureDetector(
                     onTap: () {
-                      final Uri uri = Uri.parse(
-                        'upi://pay?pa=${owner.upiId}&pn=${Uri.encodeComponent(owner.name)}&cu=INR',
+                      showUpiPaymentSheet(
+                        context,
+                        upiId: owner.upiId!,
+                        payeeName: owner.name,
+                        amount: group.expenses.fold(0.0, (s, e) => s + e.amount),
+                        description: 'Payment to group owner',
                       );
-                      launchUrl(uri, mode: LaunchMode.externalApplication);
                     },
                     child: Container(
                       padding: const EdgeInsets.symmetric(
@@ -503,31 +507,14 @@ class _SettlementCardState extends State<_SettlementCard> {
   bool _loading = false;
 
   Future<void> _payViaUPI(String upiId, double amount, String payeeName) async {
-    // UPI URL format: upi://pay?pa=UPI_ID&pn=NAME&am=AMOUNT&cu=INR
-    final Uri uri = Uri.parse(
-      'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(payeeName)}&am=${amount.toStringAsFixed(2)}&cu=INR',
+    if (!mounted) return;
+    await showUpiPaymentSheet(
+      context,
+      upiId: upiId,
+      payeeName: payeeName,
+      amount: amount,
+      description: 'Split expense payment',
     );
-
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No UPI app found or cannot launch payment.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error launching payment: $e')),
-        );
-      }
-    }
   }
 
   @override
@@ -689,7 +676,12 @@ class _SettlementCardState extends State<_SettlementCard> {
                 if (!widget.isPaid &&
                     s.creditorUpiId != null &&
                     s.creditorUpiId!.isNotEmpty &&
-                    FirebaseAuth.instance.currentUser?.uid == s.debtorId)
+                    widget.group.participants.any(
+                      (p) =>
+                          p.id == s.debtorId &&
+                          p.userId ==
+                              FirebaseAuth.instance.currentUser?.uid,
+                    ))
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
                     child: _ActionButton(

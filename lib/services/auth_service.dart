@@ -83,18 +83,35 @@ class AuthService extends ChangeNotifier {
           password: password,
         );
 
+        // emailVerified is cached on the client; after the user taps the link in
+        // their inbox, we must reload from the server before checking.
+        await cred.user?.reload();
+        final userAfterReload = _auth.currentUser;
+        if (userAfterReload == null) {
+          _errorMessage = 'Login failed. Please try again.';
+          _isLoading = false;
+          notifyListeners();
+          return false;
+        }
+
         // If not verified, keep user signed in so AuthWrapper can show VerifyEmailScreen
-        if (!cred.user!.emailVerified) {
+        if (!userAfterReload.emailVerified) {
           _errorMessage = 'Please verify your email first.';
           _isLoading = false;
           notifyListeners();
           return false;
         }
       } on FirebaseAuthException catch (e) {
-        if (e.code == 'user-not-found') {
-          _errorMessage = 'No account found for this email. Please register.';
-        } else if (e.code == 'wrong-password') {
-          _errorMessage = 'Incorrect password. Please try again.';
+        // Firebase may return newer unified credential errors
+        // (for example: invalid-credential / invalid-login-credentials).
+        if (e.code == 'user-not-found' ||
+            e.code == 'wrong-password' ||
+            e.code == 'invalid-credential' ||
+            e.code == 'invalid-login-credentials' ||
+            e.code == 'invalid-email') {
+          _errorMessage = 'Wrong email or password.';
+        } else if (e.code == 'user-disabled') {
+          _errorMessage = 'This account has been disabled.';
         } else {
           _errorMessage = e.message ?? 'Authentication failed.';
         }

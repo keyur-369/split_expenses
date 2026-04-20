@@ -4,11 +4,11 @@ import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../models/expense.dart';
 import '../models/group.dart';
 import '../models/participant.dart';
 import '../services/group_service.dart';
+import '../widgets/upi_payment_sheet.dart';
 
 class ExpenseDetailScreen extends StatefulWidget {
   final Expense expense;
@@ -27,30 +27,83 @@ class ExpenseDetailScreen extends StatefulWidget {
 class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
   final Set<String> _loadingIds = {};
 
-  Future<void> _payViaUPI(String upiId, double amount, String payeeName) async {
-    final Uri uri = Uri.parse(
-      'upi://pay?pa=$upiId&pn=${Uri.encodeComponent(payeeName)}&am=${amount.toStringAsFixed(2)}&cu=INR',
-    );
-    try {
-      if (await canLaunchUrl(uri)) {
-        await launchUrl(uri, mode: LaunchMode.externalApplication);
-      } else {
-        if (mounted) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text('No UPI app found or cannot launch payment.'),
-              backgroundColor: Colors.red,
-            ),
-          );
-        }
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Error launching payment: $e')),
-        );
+  /// Returns the current user's participant record if they are
+  /// a debtor (i.e. not the payer) in this expense.
+  Participant? _currentUserDebtor(Group liveGroup, String? currentUserId) {
+    if (currentUserId == null) return null;
+    for (final p in liveGroup.participants) {
+      if (p.userId == currentUserId &&
+          p.id != widget.expense.payerId &&
+          widget.expense.involvedParticipantIds.contains(p.id)) {
+        return p;
       }
     }
+    return null;
+  }
+
+  /// Sticky bottom pay bar — visible when the current user owes money
+  /// and the payer has a UPI ID configured.
+  Widget _buildPayBar({
+    required String upiId,
+    required String payeeName,
+    required double amount,
+  }) {
+    return Container(
+      padding: EdgeInsets.fromLTRB(
+        16, 12, 16,
+        12 + MediaQuery.of(context).viewPadding.bottom,
+      ),
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.09),
+            blurRadius: 16,
+            offset: const Offset(0, -3),
+          ),
+        ],
+      ),
+      child: SizedBox(
+        width: double.infinity,
+        height: 56,
+        child: ElevatedButton.icon(
+          onPressed: () => showUpiPaymentSheet(
+            context,
+            upiId: upiId,
+            payeeName: payeeName,
+            amount: amount,
+            description: 'Payment for “${widget.expense.title}”',
+          ),
+          icon: const Icon(Icons.account_balance_wallet_rounded, size: 20),
+          label: Text(
+            'Pay ₹${amount.toStringAsFixed(2)} Now',
+            style: const TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.bold,
+            ),
+          ),
+          style: ElevatedButton.styleFrom(
+            backgroundColor: const Color(0xFF1A73E8), // Google blue
+            foregroundColor: Colors.white,
+            elevation: 0,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  Future<void> _payViaUPI(String upiId, double amount, String payeeName) async {
+    if (!mounted) return;
+    await showUpiPaymentSheet(
+      context,
+      upiId: upiId,
+      payeeName: payeeName,
+      amount: amount,
+      description: 'Payment for ${widget.expense.title}',
+    );
   }
 
   // Expense-scoped key: "expenseId:debtorId_payerId"
@@ -391,6 +444,15 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 widget.expense.involvedParticipantIds.length
             : widget.expense.amount;
 
+        // Determine if current user should see the Pay Now button
+        final debtorParticipant = _currentUserDebtor(liveGroup, currentUserId);
+        final isCurrentUserAlreadyPaid =
+            debtorParticipant != null && _isPaid(liveGroup, debtorParticipant.id);
+        final showPayBar = debtorParticipant != null &&
+            !isCurrentUserAlreadyPaid &&
+            payerUpiId != null &&
+            payerUpiId.isNotEmpty;
+
         return Scaffold(
           backgroundColor: Theme.of(context).scaffoldBackgroundColor,
           appBar: AppBar(
@@ -400,8 +462,18 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
             ),
             centerTitle: true,
           ),
+          bottomNavigationBar: showPayBar
+              ? _buildPayBar(
+                  upiId: payerUpiId!,
+                  payeeName: payerName,
+                  amount: splitAmount,
+                )
+              : null,
           body: SingleChildScrollView(
-            padding: const EdgeInsets.all(24),
+            padding: EdgeInsets.fromLTRB(
+              24, 24, 24,
+              showPayBar ? 8 : 24, // extra bottom room when bar visible
+            ),
             child: Column(
               children: [
                 // ── Receipt Card ──────────────────────────────────

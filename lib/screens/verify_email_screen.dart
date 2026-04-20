@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
-import 'login_screen.dart';
+import 'package:provider/provider.dart';
+import '../services/auth_service.dart';
 import 'group_list_screen.dart';
 
 class VerifyEmailScreen extends StatelessWidget {
@@ -54,14 +55,12 @@ class VerifyEmailScreen extends StatelessWidget {
               ),
               const SizedBox(height: 12),
               TextButton(
-                onPressed: () {
-                  Navigator.pushAndRemoveUntil(
-                    context,
-                    MaterialPageRoute(
-                      builder: (_) => const LoginScreen(),
-                    ),
-                    (route) => false,
-                  );
+                onPressed: () async {
+                  // Stay on AuthWrapper: sign out so login shows, and pop any
+                  // pushed verify/register routes (avoid orphan Login routes).
+                  await context.read<AuthService>().signOut();
+                  if (!context.mounted) return;
+                  Navigator.of(context).popUntil((route) => route.isFirst);
                 },
                 child: const Text('Back to Login'),
               ),

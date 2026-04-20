@@ -63,14 +63,13 @@ class _GroupListScreenState extends State<GroupListScreen>
   }
 
   void _showAddGroupDialog(BuildContext context) {
-    // ... (Existing dialog logic but styled)
-    final TextEditingController _controller = TextEditingController();
+    final groupNameCtrl = TextEditingController();
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
         title: const Text("New Group"),
         content: TextField(
-          controller: _controller,
+          controller: groupNameCtrl,
           decoration: const InputDecoration(
             labelText: "Group Name",
             hintText: "e.g., Summer Trip",
@@ -85,11 +84,11 @@ class _GroupListScreenState extends State<GroupListScreen>
           ),
           ElevatedButton(
             onPressed: () {
-              if (_controller.text.isNotEmpty) {
+              if (groupNameCtrl.text.isNotEmpty) {
                 Provider.of<GroupService>(
                   context,
                   listen: false,
-                ).createGroup(_controller.text);
+                ).createGroup(groupNameCtrl.text);
                 Navigator.of(ctx).pop();
               }
             },
@@ -97,7 +96,7 @@ class _GroupListScreenState extends State<GroupListScreen>
           ),
         ],
       ),
-    );
+    ).then((_) => groupNameCtrl.dispose());
   }
 
   @override
@@ -448,8 +447,8 @@ class _GroupListScreenState extends State<GroupListScreen>
                         const SizedBox(height: 4),
                         Text(
                           balance > 0 
-                              ? "You receive \$${balance.toStringAsFixed(2)}" 
-                              : "You owe \$${(-balance).toStringAsFixed(2)}",
+                              ? "You receive ₹${balance.toStringAsFixed(2)}" 
+                              : "You owe ₹${(-balance).toStringAsFixed(2)}",
                           style: TextStyle(
                             color: balance > 0 ? Colors.green[700] : Colors.red[700],
                             fontWeight: FontWeight.w600,

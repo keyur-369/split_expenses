@@ -1,4 +1,5 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:flutter/foundation.dart';
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
@@ -23,13 +24,11 @@ class FirestoreService {
   Future<String?> getUserIdByEmail(String email) async {
     final normalized = email.trim().toLowerCase();
     if (normalized.isEmpty) {
-      print('⚠️  Empty email provided');
+      debugPrint('⚠️  Empty email provided');
       return null;
     }
 
-    print('🔍 Looking up user by email: $normalized');
-    print('   Querying collection: users');
-    print('   Query: where email == $normalized');
+    debugPrint('🔍 Looking up user by email: $normalized');
     
     try {
       final snap = await _db
@@ -38,35 +37,23 @@ class FirestoreService {
           .limit(1)
           .get();
 
-      print('📊 Query completed. Documents found: ${snap.docs.length}');
+      debugPrint('📊 Query result: ${snap.docs.length} doc(s) found');
       
       if (snap.docs.isEmpty) {
-        print('❌ No user found with email: $normalized');
-        print('   This means either:');
-        print('   1. The user has not registered yet');
-        print('   2. The email in the database is different (check case/spaces)');
-        print('   3. The user document does not have an "email" field');
+        debugPrint('❌ No user found with email: $normalized');
         return null;
       }
       
       final userId = snap.docs.first.id;
       final userData = snap.docs.first.data() as Map<String, dynamic>;
-      print('✅ Found user with email $normalized');
-      print('   User ID: $userId');
-      print('   User name: ${userData['name'] ?? 'N/A'}');
-      print('   Email in DB: ${userData['email'] ?? 'N/A'}');
+      debugPrint('✅ Found user: ${userData['name']} ($userId)');
       return userId;
     } catch (e) {
-      print('❌ Error looking up user by email: $e');
-      print('   Error type: ${e.runtimeType}');
+      debugPrint('❌ Error looking up user by email: $e');
       if (e.toString().contains('permission-denied')) {
-        print('⚠️  PERMISSION DENIED: Firestore rules are still blocking this query!');
-        print('   Please verify:');
-        print('   1. Rules are published in Firebase Console');
-        print('   2. You are logged in (request.auth != null)');
-        print('   3. Rules allow: allow read: if request.auth != null;');
+        debugPrint('⚠️  PERMISSION DENIED — check Firestore rules.');
       }
-      rethrow; // Re-throw so the caller can handle it
+      rethrow;
     }
   }
 
@@ -245,6 +232,21 @@ class FirestoreService {
       'splitWith': splitWith,
       'groupId': groupId,
       'createdAt': createdAt.toUtc(),
+    });
+  }
+
+  // Delete a single expense document
+  Future<void> deleteExpense(String expenseId) async {
+    await _db.collection('expenses').doc(expenseId).delete();
+  }
+
+  // Remove a single user from a group's members array
+  Future<void> removeGroupMember({
+    required String groupId,
+    required String userId,
+  }) async {
+    await _db.collection('groups').doc(groupId).update({
+      'members': FieldValue.arrayRemove([userId]),
     });
   }
 
