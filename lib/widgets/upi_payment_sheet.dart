@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:url_launcher/url_launcher.dart';
 
@@ -201,29 +202,50 @@ class _UpiPaymentSheet extends StatelessWidget {
           ),
           const SizedBox(height: 10),
 
-          // ── UPI ID pill ─────────────────────────────────────
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
-            decoration: BoxDecoration(
-              color: Colors.grey[100],
-              borderRadius: BorderRadius.circular(20),
-              border: Border.all(color: Colors.grey.shade300),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(Icons.account_balance_wallet_outlined,
-                    size: 14, color: Colors.grey[600]),
-                const SizedBox(width: 6),
-                Text(
-                  upiId,
-                  style: TextStyle(
-                    color: Colors.grey[700],
-                    fontSize: 13,
-                    fontWeight: FontWeight.w500,
-                  ),
+          // ── UPI ID pill with Copy ─────────────────────────────────────
+          InkWell(
+            onTap: () {
+              Clipboard.setData(ClipboardData(text: upiId));
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text('UPI ID copied to clipboard'),
+                  duration: Duration(seconds: 2),
                 ),
-              ],
+              );
+            },
+            borderRadius: BorderRadius.circular(20),
+            child: Container(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 7),
+              decoration: BoxDecoration(
+                color: Colors.grey[100],
+                borderRadius: BorderRadius.circular(20),
+                border: Border.all(color: Colors.grey.shade300),
+              ),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Icon(Icons.copy_rounded, size: 14, color: Colors.grey[600]),
+                  const SizedBox(width: 8),
+                  Text(
+                    upiId,
+                    style: TextStyle(
+                      color: Colors.grey[700],
+                      fontSize: 13,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+          const SizedBox(height: 12),
+          // ── Help Note ───────────────────────────────────────
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 24),
+            child: Text(
+              'If your bank blocks the direct payment, copy the UPI ID above and pay manually in your app.',
+              style: TextStyle(fontSize: 11, color: Colors.grey[500], fontStyle: FontStyle.italic),
+              textAlign: TextAlign.center,
             ),
           ),
 

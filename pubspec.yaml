@@ -3,7 +3,7 @@ description: "Split expenses effortlessly — track shared costs, settle debts, 
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 1.0.3
+version: 2.0.0
 
 environment:
   sdk: ^3.8.1
@@ -17,6 +17,7 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+
 
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
@@ -44,6 +45,7 @@ dependencies:
 dev_dependencies:
   flutter_test:
     sdk: flutter
+  flutter_launcher_icons: ^0.13.1
 
   # The "flutter_lints" package below contains a set of recommended lints to
   # encourage good coding practices. The lint set provided by the package is

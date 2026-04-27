@@ -27,19 +27,10 @@ class _LoginScreenState extends State<LoginScreen> {
     if (!_formKey.currentState!.validate()) return;
 
     final authService = Provider.of<AuthService>(context, listen: false);
-    final success = await authService.signInWithEmail(
+    await authService.signInWithEmail(
       _emailController.text.trim(),
       _passwordController.text,
     );
-
-    if (!success && mounted && authService.errorMessage != null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(
-          content: Text(authService.errorMessage!),
-          backgroundColor: Colors.red,
-        ),
-      );
-    }
     // If successful, auth state change will navigate automatically
   }
 
@@ -49,6 +40,21 @@ class _LoginScreenState extends State<LoginScreen> {
       body: SafeArea(
         child: Consumer<AuthService>(
           builder: (context, authService, child) {
+            final error = authService.errorMessage;
+            String? emailError;
+            String? passwordError;
+
+            if (error != null) {
+              if (error.contains('Invalid email or password')) {
+                emailError = 'Invalid credentials';
+                passwordError = 'Invalid credentials';
+              } else if (error.toLowerCase().contains('email')) {
+                emailError = error;
+              } else if (error.toLowerCase().contains('password')) {
+                passwordError = error;
+              }
+            }
+
             return SingleChildScrollView(
               padding: const EdgeInsets.all(24.0),
               child: Form(
@@ -97,6 +103,7 @@ class _LoginScreenState extends State<LoginScreen> {
                         labelText: 'Email',
                         hintText: 'you@example.com',
                         prefixIcon: const Icon(Icons.email_outlined),
+                        errorText: emailError,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -104,6 +111,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         fillColor: Colors.grey[50],
                       ),
                       keyboardType: TextInputType.emailAddress,
+                      onChanged: (value) {
+                        if (authService.errorMessage != null) {
+                          authService.clearError();
+                        }
+                      },
                       validator: (value) {
                         if (value == null || value.trim().isEmpty) {
                           return 'Please enter your email';
@@ -122,6 +134,7 @@ class _LoginScreenState extends State<LoginScreen> {
                       decoration: InputDecoration(
                         labelText: 'Password',
                         prefixIcon: const Icon(Icons.lock_outline),
+                        errorText: passwordError,
                         border: OutlineInputBorder(
                           borderRadius: BorderRadius.circular(12),
                         ),
@@ -129,6 +142,11 @@ class _LoginScreenState extends State<LoginScreen> {
                         fillColor: Colors.grey[50],
                       ),
                       obscureText: true,
+                      onChanged: (value) {
+                        if (authService.errorMessage != null) {
+                          authService.clearError();
+                        }
+                      },
                       validator: (value) {
                         if (value == null || value.isEmpty) {
                           return 'Please enter your password';
