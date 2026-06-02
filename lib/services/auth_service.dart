@@ -104,14 +104,13 @@ class AuthService extends ChangeNotifier {
       } on FirebaseAuthException catch (e) {
         // Firebase may return newer unified credential errors
         // (for example: invalid-credential / invalid-login-credentials).
-        if (e.code == 'user-not-found') {
-          _errorMessage = 'No user found for this email.';
-        } else if (e.code == 'wrong-password') {
-          _errorMessage = 'Incorrect password.';
+        if (e.code == 'user-not-found' ||
+            e.code == 'wrong-password' ||
+            e.code == 'invalid-credential' ||
+            e.code == 'invalid-login-credentials') {
+          _errorMessage = 'Invalid email or password.';
         } else if (e.code == 'invalid-email') {
           _errorMessage = 'The email address is badly formatted.';
-        } else if (e.code == 'invalid-credential' || e.code == 'invalid-login-credentials') {
-          _errorMessage = 'Invalid email or password.';
         } else if (e.code == 'user-disabled') {
           _errorMessage = 'This account has been disabled.';
         } else {

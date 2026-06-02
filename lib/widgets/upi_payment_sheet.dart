@@ -192,7 +192,7 @@ class _UpiPaymentSheet extends StatelessWidget {
             style: GoogleFonts.outfit(
               fontSize: 36,
               fontWeight: FontWeight.bold,
-              color: const Color(0xFF005041),
+              color: Theme.of(context).colorScheme.primary,
             ),
           ),
           const SizedBox(height: 4),

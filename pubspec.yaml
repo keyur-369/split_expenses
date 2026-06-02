@@ -3,7 +3,7 @@ description: "Split expenses effortlessly — track shared costs, settle debts, 
 
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 
-version: 2.0.0+1
+version: 3.0.1+3
 
 environment:
   sdk: ^3.8.1

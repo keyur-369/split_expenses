@@ -378,7 +378,13 @@ class NotificationService {
         return;
       }
 
-      final token = await _messaging.getToken();
+      final token = await _messaging.getToken().timeout(
+        const Duration(seconds: 5),
+        onTimeout: () {
+          debugPrint('⚠️ FCM token retrieval timed out after 5s');
+          return null;
+        },
+      );
       if (token == null) {
         debugPrint('⚠️  FCM token is null — skipping.');
         return;

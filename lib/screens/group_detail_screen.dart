@@ -328,6 +328,58 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     );
   }
 
+  void _confirmExitGroup(BuildContext context, Group group) {
+    final service = Provider.of<GroupService>(context, listen: false);
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final balance = service.getUserBalance(group, currentUserId);
+
+    if (balance.abs() > 0.01) {
+      showDialog(
+        context: context,
+        builder: (ctx) => AlertDialog(
+          title: const Text("Cannot Exit"),
+          content: Text(
+            "You still have an outstanding balance of ₹${balance.abs().toStringAsFixed(2)}. Please settle up before leaving the group.",
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text("OK"),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: const Text("Exit Group?"),
+        content: Text(
+          "Are you sure you want to leave '${group.name}'? You will no longer see this group.",
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text("Cancel"),
+          ),
+          TextButton(
+            onPressed: () async {
+              await service.exitGroup(group);
+              if (ctx.mounted) {
+                Navigator.pop(ctx); // Pop dialog
+                Navigator.pop(context); // Pop screen
+              }
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red),
+            child: const Text("Exit"),
+          ),
+        ],
+      ),
+    );
+  }
+
   // ─────────────────────────────────────────────────────────────
   // Payment Reminder
   // ─────────────────────────────────────────────────────────────
@@ -390,12 +442,12 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF005041).withOpacity(0.1),
+                      color: const Color(0xFF1A73E8).withOpacity(0.1),
                       shape: BoxShape.circle,
                     ),
                     child: const Icon(
                       Icons.notifications_active_rounded,
-                      color: Color(0xFF005041),
+                      color: Color(0xFF1A73E8),
                       size: 24,
                     ),
                   ),
@@ -445,10 +497,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         vertical: 8,
                       ),
                       decoration: BoxDecoration(
-                        color: const Color(0xFF005041).withOpacity(0.08),
+                        color: const Color(0xFF1A73E8).withOpacity(0.08),
                         borderRadius: BorderRadius.circular(20),
                         border: Border.all(
-                          color: const Color(0xFF005041).withOpacity(0.2),
+                          color: const Color(0xFF1A73E8).withOpacity(0.2),
                         ),
                       ),
                       child: Text(
@@ -456,7 +508,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                             (msg.length > 40 ? '…' : ''),
                         style: const TextStyle(
                           fontSize: 12,
-                          color: Color(0xFF005041),
+                          color: Color(0xFF1A73E8),
                           fontWeight: FontWeight.w500,
                         ),
                       ),
@@ -526,7 +578,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       : const Icon(Icons.send_rounded, size: 18),
                   label: Text(_sending ? 'Sending…' : 'Send Reminder'),
                   style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF005041),
+                    backgroundColor: const Color(0xFF1A73E8),
                     foregroundColor: Colors.white,
                     padding: const EdgeInsets.symmetric(vertical: 16),
                     shape: RoundedRectangleBorder(
@@ -614,7 +666,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             content: Text(
               '✅ Reminder sent to ${debtorUids.length} member(s)!',
             ),
-            backgroundColor: const Color(0xFF005041),
+            backgroundColor: const Color(0xFF1A73E8),
             duration: const Duration(seconds: 3),
           ),
         );
@@ -686,17 +738,17 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   Container(
                     margin: const EdgeInsets.only(right: 4),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF005041).withOpacity(0.1),
+                      color: const Color(0xFF1A73E8).withOpacity(0.1),
                       shape: BoxShape.circle,
                       border: Border.all(
-                        color: const Color(0xFF005041).withOpacity(0.2),
+                        color: const Color(0xFF1A73E8).withOpacity(0.2),
                       ),
                     ),
                     child: IconButton(
                       icon: const Icon(
                         Icons.notifications_active_rounded,
                         size: 20,
-                        color: Color(0xFF005041),
+                        color: Color(0xFF1A73E8),
                       ),
                       tooltip: 'Send Payment Reminder',
                       onPressed: () => _showReminderSheet(context, group),
@@ -746,13 +798,19 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     ],
                   ),
                   child: IconButton(
-                    icon: const Icon(
-                      Icons.delete_outline,
+                    icon: Icon(
+                      FirebaseAuth.instance.currentUser?.uid == group.ownerId
+                          ? Icons.delete_outline
+                          : Icons.logout_rounded,
                       size: 20,
                       color: Colors.redAccent,
                     ),
-                    tooltip: "Delete Group",
-                    onPressed: () => _confirmDeleteGroup(context, group),
+                    tooltip: FirebaseAuth.instance.currentUser?.uid == group.ownerId
+                        ? "Delete Group"
+                        : "Exit Group",
+                    onPressed: () => FirebaseAuth.instance.currentUser?.uid == group.ownerId
+                        ? _confirmDeleteGroup(context, group)
+                        : _confirmExitGroup(context, group),
                   ),
                 ),
               ],
@@ -925,7 +983,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           decoration: BoxDecoration(
             gradient: const LinearGradient(
               colors: [
-                Color(0xFF005041), // Deep Emerald
+                Color(0xFF1A73E8), // Deep Emerald
                 Color(0xFF00796B), // Lighter Teal/Green
               ],
               begin: Alignment.topLeft,
@@ -934,7 +992,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
             borderRadius: BorderRadius.circular(32),
             boxShadow: [
               BoxShadow(
-                color: const Color(0xFF005041).withOpacity(0.4),
+                color: const Color(0xFF1A73E8).withOpacity(0.4),
                 blurRadius: 20,
                 offset: const Offset(0, 10),
               ),
@@ -1051,6 +1109,10 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           ),
         ),
 
+        // Settled Up Banner
+        if (service.isGroupSettled(group) && group.expenses.isNotEmpty)
+          _buildSettledBanner(service, group),
+
         // Scrollable List
         Expanded(
           child: ListView.builder(
@@ -1155,6 +1217,82 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     return DateFormat("MMMM d").format(date).toUpperCase();
   }
 
+  Widget _buildSettledBanner(GroupService service, Group group) {
+    final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final isOwner = group.ownerId != null && currentUserId == group.ownerId;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.green.withOpacity(0.1),
+        borderRadius: BorderRadius.circular(24),
+        border: Border.all(color: Colors.green.withOpacity(0.3)),
+      ),
+      child: Row(
+        children: [
+          Container(
+            padding: const EdgeInsets.all(10),
+            decoration: BoxDecoration(
+              color: Colors.green.withOpacity(0.2),
+              shape: BoxShape.circle,
+            ),
+            child: const Icon(
+              Icons.celebration_rounded,
+              color: Colors.green,
+              size: 24,
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  "All Settled Up!",
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 16,
+                    color: Colors.green[800],
+                  ),
+                ),
+                Text(
+                  isOwner
+                      ? "Everyone has paid. You can now delete this group if you're done."
+                      : "No more outstanding payments. You can now exit this group.",
+                  style: TextStyle(
+                    fontSize: 13,
+                    color: Colors.green[700],
+                  ),
+                ),
+              ],
+            ),
+          ),
+          if (isOwner)
+            TextButton.icon(
+              onPressed: () => _confirmDeleteGroup(context, group),
+              icon: const Icon(Icons.delete_outline, size: 18),
+              label: const Text("DELETE"),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.red,
+                textStyle: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            )
+          else
+            TextButton.icon(
+              onPressed: () => _confirmExitGroup(context, group),
+              icon: const Icon(Icons.logout_rounded, size: 18),
+              label: const Text("EXIT"),
+              style: TextButton.styleFrom(
+                foregroundColor: Colors.orange.shade800,
+                textStyle: const TextStyle(fontWeight: FontWeight.bold),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
   Widget _buildParticipantsTab(GroupService service, Group group) {
     if (group.participants.isEmpty) {
       return const Center(child: Text("No participants yet."));
@@ -1250,7 +1388,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                     CircleAvatar(
                       radius: 24,
                       backgroundColor: isOwner
-                          ? const Color(0xFF005041).withOpacity(0.15)
+                          ? const Color(0xFF1A73E8).withOpacity(0.15)
                           : Theme.of(context).colorScheme.primaryContainer,
                       child: Text(
                         person.name.isNotEmpty
@@ -1259,7 +1397,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         style: TextStyle(
                           fontWeight: FontWeight.bold,
                           color: isOwner
-                              ? const Color(0xFF005041)
+                              ? const Color(0xFF1A73E8)
                               : Theme.of(context).colorScheme.onPrimaryContainer,
                         ),
                       ),
@@ -1271,7 +1409,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         child: Container(
                           padding: const EdgeInsets.all(2),
                           decoration: const BoxDecoration(
-                            color: Color(0xFF005041),
+                            color: Color(0xFF1A73E8),
                             shape: BoxShape.circle,
                           ),
                           child: const Icon(Icons.star,
@@ -1295,7 +1433,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                         padding: const EdgeInsets.symmetric(
                             horizontal: 6, vertical: 2),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF005041).withOpacity(0.1),
+                          color: const Color(0xFF1A73E8).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(6),
                         ),
                         child: const Text(
@@ -1303,7 +1441,7 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                           style: TextStyle(
                             fontSize: 9,
                             fontWeight: FontWeight.bold,
-                            color: Color(0xFF005041),
+                            color: Color(0xFF1A73E8),
                           ),
                         ),
                       ),
@@ -1526,12 +1664,12 @@ class _ExpenseOwnerSheetState extends State<_ExpenseOwnerSheet> {
                   Container(
                     padding: const EdgeInsets.all(10),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF005041).withOpacity(0.1),
+                      color: const Color(0xFF1A73E8).withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                     ),
                     child: const Icon(
                       Icons.receipt_long_rounded,
-                      color: Color(0xFF005041),
+                      color: Color(0xFF1A73E8),
                       size: 22,
                     ),
                   ),
@@ -1664,13 +1802,13 @@ class _ExpenseOwnerSheetState extends State<_ExpenseOwnerSheet> {
                                 decoration: BoxDecoration(
                                   color: paid
                                       ? Colors.green
-                                      : const Color(0xFF005041),
+                                      : const Color(0xFF1A73E8),
                                   borderRadius: BorderRadius.circular(20),
                                   boxShadow: [
                                     BoxShadow(
                                       color: (paid
                                               ? Colors.green
-                                              : const Color(0xFF005041))
+                                              : const Color(0xFF1A73E8))
                                           .withOpacity(0.3),
                                       blurRadius: 8,
                                       offset: const Offset(0, 3),

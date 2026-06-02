@@ -395,7 +395,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                     style: ElevatedButton.styleFrom(
                       backgroundColor: isPaid
                           ? Colors.orange.shade700
-                          : const Color(0xFF005041),
+                          : const Color(0xFF1A73E8),
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
                       ),
@@ -603,7 +603,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF005041).withOpacity(0.1),
+                          color: const Color(0xFF1A73E8).withOpacity(0.1),
                           borderRadius: BorderRadius.circular(20),
                         ),
                         child: Row(
@@ -612,14 +612,14 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                             const Icon(
                               Icons.touch_app_rounded,
                               size: 13,
-                              color: Color(0xFF005041),
+                              color: Color(0xFF1A73E8),
                             ),
                             const SizedBox(width: 4),
                             Text(
                               'Long press to manage',
                               style: GoogleFonts.outfit(
                                 fontSize: 11,
-                                color: const Color(0xFF005041),
+                                color: const Color(0xFF1A73E8),
                                 fontWeight: FontWeight.w600,
                               ),
                             ),
@@ -967,17 +967,17 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF005041).withOpacity(0.07),
+                      color: const Color(0xFF1A73E8).withOpacity(0.07),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: const Color(0xFF005041).withOpacity(0.2),
+                        color: const Color(0xFF1A73E8).withOpacity(0.2),
                       ),
                     ),
                     child: Row(
                       children: [
                         const Icon(
                           Icons.info_outline_rounded,
-                          color: Color(0xFF005041),
+                          color: Color(0xFF1A73E8),
                           size: 18,
                         ),
                         const SizedBox(width: 10),
@@ -986,7 +986,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                             'Long press any member\'s row to mark their payment. You can also add an optional note visible to everyone.',
                             style: GoogleFonts.outfit(
                               fontSize: 12,
-                              color: const Color(0xFF005041),
+                              color: const Color(0xFF1A73E8),
                             ),
                           ),
                         ),

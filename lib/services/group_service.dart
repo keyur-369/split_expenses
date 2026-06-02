@@ -317,6 +317,29 @@ class GroupService extends ChangeNotifier {
     await _firestoreService.deleteGroup(groupId);
   }
 
+  Future<void> exitGroup(Group group) async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    // Remove from Firestore members list
+    await _firestoreService.removeGroupMember(
+      groupId: group.id,
+      userId: user.uid,
+    );
+
+    // Cancel expense subscription for this group
+    _expenseSubscriptions[group.id]?.cancel();
+    _expenseSubscriptions.remove(group.id);
+
+    // Remove locally from Hive
+    final box = _storageService.getGroupBox();
+    await box.delete(group.id);
+
+    // Update in-memory list
+    _groups.removeWhere((g) => g.id == group.id);
+    notifyListeners();
+  }
+
   /// Mark a settlement as paid (owner only).
   /// [customKey] overrides the default "debtorId_creditorId" key —
   /// e.g. use "expId:debtorId_payerId" for expense-scoped payments.
@@ -867,5 +890,31 @@ class GroupService extends ChangeNotifier {
     }
 
     return null; // Success
+  }
+
+  /// Returns true if all participants in the group have a net balance of zero.
+  bool isGroupSettled(Group group) {
+    final balances = getNetBalances(group);
+    if (balances.isEmpty) return true;
+    
+    for (var balance in balances.values) {
+      if (balance.abs() > 0.01) {
+        return false;
+      }
+    }
+    return true;
+  }
+
+  /// Returns the net balance for a specific Firebase user ID in the group.
+  double getUserBalance(Group group, String? userId) {
+    if (userId == null) return 0.0;
+    final balances = getNetBalances(group);
+    
+    for (var p in group.participants) {
+      if (p.userId == userId || p.id == userId) {
+        return balances[p.id] ?? 0.0;
+      }
+    }
+    return 0.0;
   }
 }

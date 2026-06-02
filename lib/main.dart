@@ -32,21 +32,13 @@ void main() async {
     debugPrint('Please set up Firebase to use authentication');
   }
 
-  // Initialize push notifications in a SEPARATE try-catch.
-  // This ensures a MissingPluginException (which happens on hot-restart or
-  // when the native plugin isn't yet compiled into the APK) never prevents
-  // Firebase / Auth from working.
+  // Initialize push notifications in a SEPARATE task.
+  // This ensures a MissingPluginException or network delay/hang
+  // never prevents the app from starting up.
   if (firebaseReady) {
-    try {
-      await NotificationService.initialize();
-    } catch (e) {
-      // Non-fatal: notifications won't work until app is fully restarted
-      // (flutter run, not hot-restart) so the native plugin initializes.
-      debugPrint('⚠️ Push notification init skipped: $e');
-      debugPrint(
-        '👉 Do a full "flutter run" (not hot-restart) to activate notifications.',
-      );
-    }
+    NotificationService.initialize().catchError((e) {
+      debugPrint('⚠️ Push notification init failed: $e');
+    });
   }
 
   // Initialize storage
@@ -127,35 +119,30 @@ class AuthWrapper extends StatelessWidget {
       );
     }
 
-    return Consumer<AuthService>(
-      builder: (context, authService, child) {
-        // Listen to auth state changes
-        return StreamBuilder<User?>(
-          stream: authService.authStateChanges,
-          builder: (context, snapshot) {
-            // Show loading while checking auth state
-            if (snapshot.connectionState == ConnectionState.waiting) {
-              return const Scaffold(
-                body: Center(child: CircularProgressIndicator()),
-              );
-            }
+    return StreamBuilder<User?>(
+      stream: FirebaseAuth.instance.authStateChanges(),
+      builder: (context, snapshot) {
+        // Show loading while checking auth state
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Scaffold(
+            body: Center(child: CircularProgressIndicator()),
+          );
+        }
 
-            final user = snapshot.data;
+        final user = snapshot.data;
 
-            // If user is authenticated but email not verified, show verify screen
-            if (user != null && !user.emailVerified) {
-              return const VerifyEmailScreen();
-            }
+        // If user is authenticated but email not verified, show verify screen
+        if (user != null && !user.emailVerified) {
+          return const VerifyEmailScreen();
+        }
 
-            // If user is authenticated and verified, show app
-            if (user != null && authService.isAuthenticated) {
-              return const GroupListScreen();
-            }
+        // If user is authenticated and verified, show app
+        if (user != null) {
+          return const GroupListScreen();
+        }
 
-            // Otherwise, show login screen
-            return const LoginScreen();
-          },
-        );
+        // Otherwise, show login screen
+        return const LoginScreen();
       },
     );
   }

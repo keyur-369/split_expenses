@@ -83,26 +83,26 @@ class SettleUpScreen extends StatelessWidget {
                     ),
                     margin: const EdgeInsets.only(bottom: 16),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF005041).withOpacity(0.1),
+                      color: Theme.of(context).colorScheme.primary.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: const Color(0xFF005041).withOpacity(0.3),
+                        color: Theme.of(context).colorScheme.primary.withOpacity(0.3),
                       ),
                     ),
                     child: Row(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        const Icon(
+                        Icon(
                           Icons.admin_panel_settings_rounded,
                           size: 18,
-                          color: Color(0xFF005041),
+                          color: Theme.of(context).colorScheme.primary,
                         ),
                         const SizedBox(width: 8),
                         Text(
                           'You are the group owner — you can mark payments',
                           style: GoogleFonts.outfit(
                             fontSize: 13,
-                            color: const Color(0xFF005041),
+                            color: Theme.of(context).colorScheme.primary,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
@@ -338,19 +338,22 @@ class _SummaryHeaderCard extends StatelessWidget {
     final total = group.expenses.fold(0.0, (s, e) => s + e.amount);
     final settled = group.paidSettlementKeys.length;
 
+    final theme = Theme.of(context);
+    final primary = theme.colorScheme.primary;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
       decoration: BoxDecoration(
-        gradient: const LinearGradient(
-          colors: [Color(0xFF005041), Color(0xFF00897B)],
+        gradient: LinearGradient(
+          colors: [primary, primary.withOpacity(0.8)],
           begin: Alignment.topLeft,
           end: Alignment.bottomRight,
         ),
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: const Color(0xFF005041).withOpacity(0.35),
+            color: primary.withOpacity(0.35),
             blurRadius: 18,
             offset: const Offset(0, 8),
           ),
@@ -720,7 +723,7 @@ class _SettlementCardState extends State<_SettlementCard> {
                           : _ActionButton(
                               label: 'Mark Paid',
                               icon: Icons.check_circle_outline,
-                              color: const Color(0xFF005041),
+                              color: Theme.of(context).colorScheme.primary,
                               onTap: () async {
                                 setState(() => _loading = true);
                                 if (widget.onMarkPaid != null) {

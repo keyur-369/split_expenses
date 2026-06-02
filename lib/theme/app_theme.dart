@@ -2,9 +2,23 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
 class AppTheme {
-  static const Color primaryColor = Color(0xFF006C5B); // Emerald Green
-  static const Color secondaryColor = Color(0xFF4D616C); // Slate
-  static const Color accentColor = Color(0xFFFFD700); // Gold for highlights
+  static const Color primaryColor = Color(0xFF1A73E8);
+  static const Color accentColor = Color(0xFF0D47A1);
+  static const Color bgColor = Color(0xFFF8FAFF);
+  static const Color cardColor = Colors.white;
+  static const Color subtleGray = Color(0xFFF1F4FB);
+  static const Color textDark = Color(0xFF1C2B4A);
+  static const Color textMid = Color(0xFF5A6A85);
+  static const Color errorColor = Color(0xFFE53935);
+  static const Color successColor = Color(0xFF00897B);
+  static const Color borderDefault = Color(0xFFDDE3F0);
+
+  // ── Section palette ──
+  static const Color receiveGreen = Color(0xFF00897B);
+  static const Color receiveGreenBg = Color(0xFFE6F4F1);
+  static const Color oweRed = Color(0xFFE53935);
+  static const Color oweRedBg = Color(0xFFFFEBEB);
+  static const Color settledBg = Color(0xFFF1F4FB);
 
   static ThemeData get lightTheme {
     return ThemeData(
@@ -13,38 +27,37 @@ class AppTheme {
       colorScheme: ColorScheme.fromSeed(
         seedColor: primaryColor,
         primary: primaryColor,
-        secondary: secondaryColor,
-        primaryContainer: const Color(0xFFC8E6C9), // Light Mint
-        onPrimaryContainer: const Color(0xFF003D33), // Dark Text
-        surface: const Color(0xFFF8F9FA), // Very light grey surface
+        secondary: textMid,
+        primaryContainer: subtleGray,
+        onPrimaryContainer: textDark,
+        surface: bgColor,
+        error: errorColor,
       ),
-      scaffoldBackgroundColor: const Color(
-        0xFFFFFFFF,
-      ), // Clean White background
+      scaffoldBackgroundColor: bgColor,
       textTheme: GoogleFonts.outfitTextTheme(ThemeData.light().textTheme),
       appBarTheme: AppBarTheme(
         backgroundColor: Colors.transparent,
         elevation: 0,
         centerTitle: false, // Left aligned for modern feel
         titleTextStyle: GoogleFonts.outfit(
-          color: const Color(0xFF1A1C18),
+          color: textDark,
           fontSize: 24,
           fontWeight: FontWeight.bold,
         ),
-        iconTheme: const IconThemeData(color: Color(0xFF1A1C18)),
+        iconTheme: const IconThemeData(color: textDark),
       ),
       cardTheme: CardThemeData(
         elevation: 0,
         shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
-        color: Colors.white,
+        color: cardColor,
         margin: const EdgeInsets.symmetric(
           vertical: 8,
           horizontal: 0,
         ), // Full width or controlled margin
       ),
       floatingActionButtonTheme: FloatingActionButtonThemeData(
-        backgroundColor: const Color(0xFFA5F2E1), // Bright Mint
-        foregroundColor: const Color(0xFF004D40), // Dark Teal text
+        backgroundColor: primaryColor,
+        foregroundColor: Colors.white,
         elevation: 4,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(50),
@@ -67,7 +80,7 @@ class AppTheme {
       ),
       inputDecorationTheme: InputDecorationTheme(
         filled: true,
-        fillColor: const Color(0xFFF5F5F5),
+        fillColor: subtleGray,
         border: OutlineInputBorder(
           borderRadius: BorderRadius.circular(16),
           borderSide: BorderSide.none,

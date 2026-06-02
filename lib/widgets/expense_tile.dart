@@ -134,10 +134,10 @@ class ExpenseTile extends StatelessWidget {
                   children: [
                     Text(
                       "₹${expense.amount.toStringAsFixed(2)}",
-                      style: const TextStyle(
+                      style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
-                        color: Color(0xFF00695C),
+                        color: theme.colorScheme.primary,
                       ),
                     ),
                     if (hasPaidMembers)
