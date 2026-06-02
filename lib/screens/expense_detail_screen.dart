@@ -27,12 +27,43 @@ class ExpenseDetailScreen extends StatefulWidget {
 class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
   final Set<String> _loadingIds = {};
 
+  Color _getAvatarColor(String name) {
+    final hash = name.codeUnits.fold<int>(0, (prev, elem) => prev + elem);
+    final colors = [
+      const Color(0xFF00796B), // Teal
+      const Color(0xFF1976D2), // Blue
+      const Color(0xFF7B1FA2), // Purple
+      const Color(0xFF388E3C), // Green
+      const Color(0xFFD32F2F), // Red
+      const Color(0xFFF57C00), // Orange
+      const Color(0xFFC2185B), // Pink
+      const Color(0xFF5D4037), // Brown
+    ];
+    return colors[hash % colors.length];
+  }
+
+  String _getInitials(String name) {
+    if (name.isEmpty) return "";
+    final parts = name.trim().split(" ");
+    if (parts.length > 1) {
+      return (parts[0][0] + parts[1][0]).toUpperCase();
+    }
+    return parts[0][0].toUpperCase();
+  }
+
   /// Returns the current user's participant record if they are
   /// a debtor (i.e. not the payer) in this expense.
   Participant? _currentUserDebtor(Group liveGroup, String? currentUserId) {
     if (currentUserId == null) return null;
+    final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
     for (final p in liveGroup.participants) {
-      if (p.userId == currentUserId &&
+      final isMe = p.userId == currentUserId ||
+          p.id == currentUserId ||
+          (currentUserEmail != null &&
+              p.email != null &&
+              p.email!.isNotEmpty &&
+              p.email!.toLowerCase() == currentUserEmail.toLowerCase());
+      if (isMe &&
           p.id != widget.expense.payerId &&
           widget.expense.involvedParticipantIds.contains(p.id)) {
         return p;
@@ -48,24 +79,54 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
     required String payeeName,
     required double amount,
   }) {
+    final theme = Theme.of(context);
     return Container(
       padding: EdgeInsets.fromLTRB(
         16, 12, 16,
         12 + MediaQuery.of(context).viewPadding.bottom,
       ),
       decoration: BoxDecoration(
-        color: Theme.of(context).scaffoldBackgroundColor,
+        color: Colors.white,
+        border: Border(
+          top: BorderSide(
+            color: const Color(0xFFDDE3F0).withOpacity(0.6),
+            width: 1.2,
+          ),
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.09),
-            blurRadius: 16,
-            offset: const Offset(0, -3),
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, -4),
           ),
         ],
       ),
-      child: SizedBox(
+      child: Container(
         width: double.infinity,
-        height: 56,
+        height: 54,
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            colors: [
+              theme.colorScheme.primary,
+              Color.fromARGB(
+                theme.colorScheme.primary.alpha,
+                (theme.colorScheme.primary.red * 0.95).round(),
+                (theme.colorScheme.primary.green * 1.05).clamp(0, 255).round(),
+                (theme.colorScheme.primary.blue * 1.1).clamp(0, 255).round(),
+              ),
+            ],
+            begin: Alignment.topLeft,
+            end: Alignment.bottomRight,
+          ),
+          borderRadius: BorderRadius.circular(27),
+          boxShadow: [
+            BoxShadow(
+              color: theme.colorScheme.primary.withOpacity(0.3),
+              blurRadius: 12,
+              offset: const Offset(0, 5),
+            ),
+          ],
+        ),
         child: ElevatedButton.icon(
           onPressed: () => showUpiPaymentSheet(
             context,
@@ -74,20 +135,22 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
             amount: amount,
             description: 'Payment for “${widget.expense.title}”',
           ),
-          icon: const Icon(Icons.account_balance_wallet_rounded, size: 20),
+          icon: const Icon(Icons.account_balance_wallet_rounded, size: 20, color: Colors.white),
           label: Text(
             'Pay ₹${amount.toStringAsFixed(2)} Now',
             style: const TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.bold,
+              letterSpacing: 0.5,
+              color: Colors.white,
             ),
           ),
           style: ElevatedButton.styleFrom(
-            backgroundColor: const Color(0xFF1A73E8), // Google blue
+            backgroundColor: Colors.transparent,
+            shadowColor: Colors.transparent,
             foregroundColor: Colors.white,
-            elevation: 0,
             shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
+              borderRadius: BorderRadius.circular(27),
             ),
           ),
         ),
@@ -184,9 +247,9 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
             bottom: MediaQuery.of(ctx).viewInsets.bottom,
           ),
           child: Container(
-            decoration: BoxDecoration(
-              color: Theme.of(ctx).scaffoldBackgroundColor,
-              borderRadius: const BorderRadius.vertical(
+            decoration: const BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.vertical(
                 top: Radius.circular(28),
               ),
             ),
@@ -197,10 +260,10 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 // Handle bar
                 Center(
                   child: Container(
-                    width: 40,
+                    width: 36,
                     height: 4,
                     decoration: BoxDecoration(
-                      color: Colors.grey[300],
+                      color: const Color(0xFFDDE3F0),
                       borderRadius: BorderRadius.circular(2),
                     ),
                   ),
@@ -211,18 +274,16 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 CircleAvatar(
                   radius: 36,
                   backgroundColor: isPaid
-                      ? Colors.green.withOpacity(0.15)
-                      : Theme.of(ctx).colorScheme.primaryContainer,
+                      ? Colors.green.withOpacity(0.12)
+                      : _getAvatarColor(person.name).withOpacity(0.15),
                   child: Text(
-                    person.name.isNotEmpty
-                        ? person.name[0].toUpperCase()
-                        : '?',
+                    _getInitials(person.name),
                     style: TextStyle(
-                      fontSize: 28,
+                      fontSize: 24,
                       fontWeight: FontWeight.bold,
                       color: isPaid
                           ? Colors.green
-                          : Theme.of(ctx).colorScheme.primary,
+                          : _getAvatarColor(person.name),
                     ),
                   ),
                 ),
@@ -234,6 +295,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                   style: GoogleFonts.outfit(
                     fontSize: 22,
                     fontWeight: FontWeight.bold,
+                    color: const Color(0xFF1C2B4A),
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -241,10 +303,10 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                   isPaid
                       ? 'Already marked as paid ✓'
                       : 'Owes $payerName for "${widget.expense.title}"',
-                  style: TextStyle(color: Colors.grey[600], fontSize: 14),
+                  style: const TextStyle(color: Color(0xFF5A6A85), fontSize: 14),
                   textAlign: TextAlign.center,
                 ),
-                const SizedBox(height: 8),
+                const SizedBox(height: 12),
 
                 // Amount chip
                 Container(
@@ -254,8 +316,12 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                   ),
                   decoration: BoxDecoration(
                     color:
-                        (isPaid ? Colors.green : Colors.red).withOpacity(0.1),
+                        (isPaid ? Colors.green : Colors.red).withOpacity(0.08),
                     borderRadius: BorderRadius.circular(30),
+                    border: Border.all(
+                      color: (isPaid ? Colors.green : Colors.red).withOpacity(0.15),
+                      width: 1,
+                    ),
                   ),
                   child: Text(
                     isPaid
@@ -275,11 +341,11 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                   Align(
                     alignment: Alignment.centerLeft,
                     child: Text(
-                      'Add a note  (optional)',
+                      'Add a note (optional)',
                       style: GoogleFonts.outfit(
-                        fontSize: 12,
+                        fontSize: 13,
                         fontWeight: FontWeight.w600,
-                        color: Colors.grey[600],
+                        color: const Color(0xFF1C2B4A),
                         letterSpacing: 0.3,
                       ),
                     ),
@@ -293,30 +359,44 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                     decoration: InputDecoration(
                       hintText:
                           'e.g. "Paid cash at restaurant" or "Received via UPI"',
-                      hintStyle: TextStyle(
-                        color: Colors.grey[400],
+                      hintStyle: const TextStyle(
+                        color: Color(0xFF5A6A85),
                         fontSize: 13,
                       ),
                       filled: true,
-                      fillColor: Theme.of(ctx)
-                          .colorScheme
-                          .surfaceContainerHighest
-                          .withOpacity(0.4),
+                      fillColor: const Color(0xFFF8FAFF),
                       border: OutlineInputBorder(
-                        borderRadius: BorderRadius.circular(14),
-                        borderSide: BorderSide.none,
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: const Color(0xFFDDE3F0).withOpacity(0.8),
+                          width: 1.2,
+                        ),
+                      ),
+                      enabledBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: const Color(0xFFDDE3F0).withOpacity(0.8),
+                          width: 1.2,
+                        ),
+                      ),
+                      focusedBorder: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        borderSide: BorderSide(
+                          color: Theme.of(ctx).colorScheme.primary,
+                          width: 1.5,
+                        ),
                       ),
                       contentPadding: const EdgeInsets.symmetric(
                         horizontal: 16,
                         vertical: 12,
                       ),
-                      counterStyle: TextStyle(
+                      counterStyle: const TextStyle(
                         fontSize: 11,
-                        color: Colors.grey[400],
+                        color: Color(0xFF5A6A85),
                       ),
-                      prefixIcon: Icon(
+                      prefixIcon: const Icon(
                         Icons.notes_rounded,
-                        color: Colors.grey[400],
+                        color: Color(0xFF5A6A85),
                         size: 20,
                       ),
                     ),
@@ -330,10 +410,10 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: Colors.green.withOpacity(0.08),
+                      color: Colors.green.withOpacity(0.06),
                       borderRadius: BorderRadius.circular(14),
                       border: Border.all(
-                        color: Colors.green.withOpacity(0.25),
+                        color: Colors.green.withOpacity(0.15),
                       ),
                     ),
                     child: Row(
@@ -362,9 +442,36 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 ],
 
                 // Action button
-                SizedBox(
+                Container(
                   width: double.infinity,
                   height: 52,
+                  decoration: BoxDecoration(
+                    gradient: isPaid
+                        ? null
+                        : LinearGradient(
+                            colors: [
+                              Theme.of(ctx).colorScheme.primary,
+                              Color.fromARGB(
+                                Theme.of(ctx).colorScheme.primary.alpha,
+                                (Theme.of(ctx).colorScheme.primary.red * 0.95).round(),
+                                (Theme.of(ctx).colorScheme.primary.green * 1.05).clamp(0, 255).round(),
+                                (Theme.of(ctx).colorScheme.primary.blue * 1.1).clamp(0, 255).round(),
+                              ),
+                            ],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                    color: isPaid ? Colors.orange.shade700 : null,
+                    borderRadius: BorderRadius.circular(26),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (isPaid ? Colors.orange.shade700 : Theme.of(ctx).colorScheme.primary)
+                            .withOpacity(0.3),
+                        blurRadius: 12,
+                        offset: const Offset(0, 5),
+                      ),
+                    ],
+                  ),
                   child: ElevatedButton.icon(
                     onPressed: () async {
                       final note = noteController.text.trim();
@@ -393,11 +500,11 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                       ),
                     ),
                     style: ElevatedButton.styleFrom(
-                      backgroundColor: isPaid
-                          ? Colors.orange.shade700
-                          : const Color(0xFF1A73E8),
+                      backgroundColor: Colors.transparent,
+                      shadowColor: Colors.transparent,
+                      foregroundColor: Colors.white,
                       shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
+                        borderRadius: BorderRadius.circular(26),
                       ),
                       elevation: 0,
                     ),
@@ -406,9 +513,9 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 const SizedBox(height: 12),
                 TextButton(
                   onPressed: () => Navigator.pop(ctx),
-                  child: Text(
+                  child: const Text(
                     'Cancel',
-                    style: TextStyle(color: Colors.grey[600], fontSize: 15),
+                    style: TextStyle(color: Color(0xFF5A6A85), fontSize: 15, fontWeight: FontWeight.w600),
                   ),
                 ),
               ],
@@ -454,24 +561,60 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
             payerUpiId.isNotEmpty;
 
         return Scaffold(
-          backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+          backgroundColor: const Color(0xFFF8FAFF),
           appBar: AppBar(
+            leadingWidth: 56,
+            leading: Padding(
+              padding: const EdgeInsets.only(left: 16.0),
+              child: Center(
+                child: Container(
+                  width: 38,
+                  height: 38,
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: const Color(0xFFDDE3F0).withOpacity(0.8)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.03),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(Icons.arrow_back_rounded, size: 18),
+                    onPressed: () => Navigator.pop(context),
+                    color: const Color(0xFF1C2B4A),
+                    padding: EdgeInsets.zero,
+                  ),
+                ),
+              ),
+            ),
             title: Text(
               'Expense Details',
-              style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                color: const Color(0xFF1C2B4A),
+                fontSize: 18,
+              ),
             ),
             centerTitle: true,
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            scrolledUnderElevation: 0,
           ),
           bottomNavigationBar: showPayBar
               ? _buildPayBar(
-                  upiId: payerUpiId!,
+                  upiId: payerUpiId,
                   payeeName: payerName,
                   amount: splitAmount,
                 )
               : null,
           body: SingleChildScrollView(
+            physics: const BouncingScrollPhysics(),
             padding: EdgeInsets.fromLTRB(
-              24, 24, 24,
+              24, 16, 24,
               showPayBar ? 8 : 24, // extra bottom room when bar visible
             ),
             child: Column(
@@ -479,89 +622,94 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 // ── Receipt Card ──────────────────────────────────
                 Container(
                   width: double.infinity,
-                  padding: const EdgeInsets.all(32),
+                  padding: const EdgeInsets.all(28),
                   decoration: BoxDecoration(
-                    color: Theme.of(context).cardTheme.color,
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(24),
+                    border: Border.all(
+                      color: const Color(0xFFDDE3F0).withOpacity(0.6),
+                      width: 1.2,
+                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 20,
-                        offset: const Offset(0, 10),
+                        color: Colors.black.withOpacity(0.015),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
                       ),
                     ],
                   ),
                   child: Column(
                     children: [
                       Container(
-                        width: 80,
-                        height: 80,
+                        width: 72,
+                        height: 72,
                         decoration: BoxDecoration(
                           color: Theme.of(context)
                               .colorScheme
                               .primary
-                              .withOpacity(0.1),
+                              .withOpacity(0.08),
                           shape: BoxShape.circle,
                         ),
                         child: Icon(
                           Icons.receipt_long_rounded,
-                          size: 40,
+                          size: 36,
                           color: Theme.of(context).colorScheme.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        widget.expense.title,
+                        style: GoogleFonts.outfit(
+                          fontSize: 22,
+                          fontWeight: FontWeight.bold,
+                          color: const Color(0xFF1C2B4A),
+                        ),
+                        textAlign: TextAlign.center,
+                      ),
+                      const SizedBox(height: 6),
+                      Text(
+                        DateFormat.yMMMMd().format(widget.expense.date),
+                        style: const TextStyle(
+                          color: Color(0xFF5A6A85),
+                          fontSize: 13,
+                          fontWeight: FontWeight.w500,
                         ),
                       ),
                       const SizedBox(height: 24),
                       Text(
-                        widget.expense.title,
-                        style: GoogleFonts.outfit(
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        DateFormat.yMMMMd().format(widget.expense.date),
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                      ),
-                      const SizedBox(height: 32),
-                      Text(
                         '₹${widget.expense.amount.toStringAsFixed(2)}',
-                        style: TextStyle(
-                          fontSize: 48,
-                          fontWeight: FontWeight.w900,
-                          color: Theme.of(context).colorScheme.primary,
-                          letterSpacing: -1,
+                        style: GoogleFonts.outfit(
+                          fontSize: 42,
+                          fontWeight: FontWeight.w800,
+                          color: const Color(0xFF1C2B4A),
+                          letterSpacing: -0.5,
                         ),
                       ),
-                      const SizedBox(height: 8),
+                      const SizedBox(height: 16),
                       Container(
                         padding: const EdgeInsets.symmetric(
-                          horizontal: 16,
-                          vertical: 8,
+                          horizontal: 14,
+                          vertical: 6,
                         ),
                         decoration: BoxDecoration(
-                          color: Theme.of(context)
-                              .colorScheme
-                              .primary
-                              .withOpacity(0.1),
-                          borderRadius: BorderRadius.circular(30),
+                          color: _getAvatarColor(payerName).withOpacity(0.08),
+                          borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: _getAvatarColor(payerName).withOpacity(0.15),
+                            width: 1,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
                           children: [
                             CircleAvatar(
-                              radius: 14,
-                              backgroundColor:
-                                  Theme.of(context).colorScheme.primary,
-                              foregroundColor:
-                                  Theme.of(context).colorScheme.onPrimary,
+                              radius: 12,
+                              backgroundColor: _getAvatarColor(payerName),
+                              foregroundColor: Colors.white,
                               child: Text(
-                                payerName.isNotEmpty ? payerName[0] : '?',
+                                _getInitials(payerName),
                                 style: const TextStyle(
-                                  fontSize: 14,
+                                  fontSize: 10,
                                   fontWeight: FontWeight.bold,
                                 ),
                               ),
@@ -570,9 +718,9 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                             Text(
                               'Paid by $payerName',
                               style: TextStyle(
-                                color: Theme.of(context).colorScheme.primary,
-                                fontWeight: FontWeight.w600,
-                                fontSize: 16,
+                                color: _getAvatarColor(payerName),
+                                fontWeight: FontWeight.bold,
+                                fontSize: 13,
                               ),
                             ),
                           ],
@@ -582,7 +730,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                   ),
                 ),
 
-                const SizedBox(height: 32),
+                const SizedBox(height: 28),
 
                 // ── Section header ────────────────────────────────
                 Row(
@@ -590,9 +738,9 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                     Text(
                       'Split breakdown',
                       style: GoogleFonts.outfit(
-                        fontSize: 18,
+                        fontSize: 16,
                         fontWeight: FontWeight.bold,
-                        color: Theme.of(context).colorScheme.secondary,
+                        color: const Color(0xFF1C2B4A),
                       ),
                     ),
                     const Spacer(),
@@ -603,8 +751,12 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                           vertical: 4,
                         ),
                         decoration: BoxDecoration(
-                          color: const Color(0xFF1A73E8).withOpacity(0.1),
+                          color: const Color(0xFF1A73E8).withOpacity(0.08),
                           borderRadius: BorderRadius.circular(20),
+                          border: Border.all(
+                            color: const Color(0xFF1A73E8).withOpacity(0.15),
+                            width: 1,
+                          ),
                         ),
                         child: Row(
                           mainAxisSize: MainAxisSize.min,
@@ -620,7 +772,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                               style: GoogleFonts.outfit(
                                 fontSize: 11,
                                 color: const Color(0xFF1A73E8),
-                                fontWeight: FontWeight.w600,
+                                fontWeight: FontWeight.bold,
                               ),
                             ),
                           ],
@@ -633,8 +785,19 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                 // ── Member rows ───────────────────────────────────
                 Container(
                   decoration: BoxDecoration(
-                    color: Theme.of(context).cardTheme.color,
+                    color: Colors.white,
                     borderRadius: BorderRadius.circular(20),
+                    border: Border.all(
+                      color: const Color(0xFFDDE3F0).withOpacity(0.6),
+                      width: 1.2,
+                    ),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.015),
+                        blurRadius: 10,
+                        offset: const Offset(0, 4),
+                      ),
+                    ],
                   ),
                   child: Column(
                     children: widget.expense.involvedParticipantIds
@@ -664,14 +827,22 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                       final Color statusColor;
                       if (isPayer) {
                         statusText = 'Already Paid';
-                        statusColor = Colors.green;
+                        statusColor = Colors.green.shade700;
                       } else if (paid) {
                         statusText = 'Marked as Paid ✓';
-                        statusColor = Colors.green;
+                        statusColor = Colors.green.shade700;
                       } else {
                         statusText = 'Owes $payerName';
-                        statusColor = Colors.redAccent;
+                        statusColor = Colors.redAccent.shade700;
                       }
+
+                      final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
+                      final isMe = person.userId == currentUserId ||
+                          person.id == currentUserId ||
+                          (currentUserEmail != null &&
+                              person.email != null &&
+                              person.email!.isNotEmpty &&
+                              person.email!.toLowerCase() == currentUserEmail.toLowerCase());
 
                       final topRadius = idx == 0 ? 20.0 : 0.0;
                       final bottomRadius = isLast ? 20.0 : 0.0;
@@ -735,21 +906,16 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                         CircleAvatar(
                                           radius: 22,
                                           backgroundColor: paid || isPayer
-                                              ? Colors.green.withOpacity(0.15)
-                                              : Theme.of(context)
-                                                  .colorScheme
-                                                  .secondaryContainer,
+                                              ? Colors.green.withOpacity(0.12)
+                                              : _getAvatarColor(person.name).withOpacity(0.15),
                                           foregroundColor: paid || isPayer
                                               ? Colors.green
-                                              : Theme.of(context)
-                                                  .colorScheme
-                                                  .secondary,
+                                              : _getAvatarColor(person.name),
                                           child: Text(
-                                            person.name.isNotEmpty
-                                                ? person.name[0].toUpperCase()
-                                                : '?',
+                                            _getInitials(person.name),
                                             style: const TextStyle(
                                               fontWeight: FontWeight.bold,
+                                              fontSize: 13,
                                             ),
                                           ),
                                         ),
@@ -760,9 +926,13 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                             child: Container(
                                               width: 16,
                                               height: 16,
-                                              decoration: const BoxDecoration(
-                                                color: Colors.green,
+                                              decoration: BoxDecoration(
+                                                color: Colors.green.shade600,
                                                 shape: BoxShape.circle,
+                                                border: Border.all(
+                                                  color: Colors.white,
+                                                  width: 1.5,
+                                                ),
                                               ),
                                               child: const Icon(
                                                 Icons.check,
@@ -785,9 +955,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                             style: GoogleFonts.outfit(
                                               fontWeight: FontWeight.w600,
                                               fontSize: 15,
-                                              color: paid || isPayer
-                                                  ? Colors.green[700]
-                                                  : null,
+                                              color: const Color(0xFF1C2B4A),
                                             ),
                                           ),
                                           const SizedBox(height: 2),
@@ -796,7 +964,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                             style: TextStyle(
                                               color: statusColor,
                                               fontSize: 12,
-                                              fontWeight: FontWeight.w500,
+                                              fontWeight: FontWeight.w600,
                                             ),
                                           ),
                                         ],
@@ -806,37 +974,59 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                     // Pay button / Amount / loading
                                     if (!isPayer &&
                                         !paid &&
-                                        person.userId == currentUserId &&
+                                        isMe &&
                                         payerUpiId != null &&
                                         payerUpiId.isNotEmpty)
                                       Padding(
-                                        padding: const EdgeInsets.only(right: 8),
-                                        child: ElevatedButton.icon(
-                                          onPressed: () => _payViaUPI(
-                                            payerUpiId,
-                                            splitAmount,
-                                            payerName,
+                                        padding: const EdgeInsets.only(right: 12),
+                                        child: Container(
+                                          decoration: BoxDecoration(
+                                            gradient: LinearGradient(
+                                              colors: [
+                                                Colors.blue.shade700,
+                                                Colors.blue.shade800,
+                                              ],
+                                            ),
+                                            borderRadius: BorderRadius.circular(8),
+                                            boxShadow: [
+                                              BoxShadow(
+                                                color: Colors.blue.shade700.withOpacity(0.25),
+                                                blurRadius: 6,
+                                                offset: const Offset(0, 3),
+                                              ),
+                                            ],
                                           ),
-                                          icon: const Icon(Icons.account_balance_wallet,
-                                              size: 14),
-                                          label: const Text('Pay'),
-                                          style: ElevatedButton.styleFrom(
-                                            backgroundColor: Colors.blue.shade700,
-                                            foregroundColor: Colors.white,
-                                            padding: const EdgeInsets.symmetric(
-                                              horizontal: 12,
-                                              vertical: 4,
+                                          child: ElevatedButton.icon(
+                                            onPressed: () => _payViaUPI(
+                                              payerUpiId,
+                                              splitAmount,
+                                              payerName,
                                             ),
-                                            minimumSize: Size.zero,
-                                            tapTargetSize:
-                                                MaterialTapTargetSize.shrinkWrap,
-                                            textStyle: const TextStyle(
-                                              fontSize: 12,
-                                              fontWeight: FontWeight.bold,
+                                            icon: const Icon(Icons.account_balance_wallet_rounded,
+                                                size: 12, color: Colors.white),
+                                            label: const Text(
+                                              'Pay',
+                                              style: TextStyle(
+                                                fontSize: 12,
+                                                fontWeight: FontWeight.bold,
+                                                color: Colors.white,
+                                              ),
                                             ),
-                                            shape: RoundedRectangleBorder(
-                                              borderRadius:
-                                                  BorderRadius.circular(8),
+                                            style: ElevatedButton.styleFrom(
+                                              backgroundColor: Colors.transparent,
+                                              shadowColor: Colors.transparent,
+                                              foregroundColor: Colors.white,
+                                              padding: const EdgeInsets.symmetric(
+                                                horizontal: 12,
+                                                vertical: 6,
+                                              ),
+                                              minimumSize: Size.zero,
+                                              tapTargetSize:
+                                                  MaterialTapTargetSize.shrinkWrap,
+                                              shape: RoundedRectangleBorder(
+                                                borderRadius:
+                                                    BorderRadius.circular(8),
+                                              ),
                                             ),
                                           ),
                                         ),
@@ -861,12 +1051,12 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                               fontWeight: FontWeight.bold,
                                               fontSize: 15,
                                               color: paid || isPayer
-                                                  ? Colors.green
-                                                  : null,
+                                                  ? Colors.green.shade700
+                                                  : const Color(0xFF1C2B4A),
                                               decoration: paid
                                                   ? TextDecoration.lineThrough
                                                   : null,
-                                              decorationColor: Colors.green,
+                                              decorationColor: Colors.green.shade700,
                                             ),
                                           ),
                                           if (paid)
@@ -880,14 +1070,18 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                                 vertical: 2,
                                               ),
                                               decoration: BoxDecoration(
-                                                color: Colors.green,
+                                                color: Colors.green.shade100,
                                                 borderRadius:
                                                     BorderRadius.circular(6),
+                                                border: Border.all(
+                                                  color: Colors.green.shade300,
+                                                  width: 0.8,
+                                                ),
                                               ),
-                                              child: const Text(
+                                              child: Text(
                                                 'PAID',
                                                 style: TextStyle(
-                                                  color: Colors.white,
+                                                  color: Colors.green.shade800,
                                                   fontSize: 9,
                                                   fontWeight: FontWeight.bold,
                                                   letterSpacing: 0.5,
@@ -899,9 +1093,9 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
 
                                     if (isOwner && isDebtor && !loading) ...[
                                       const SizedBox(width: 10),
-                                      Icon(
+                                      const Icon(
                                         Icons.more_horiz,
-                                        color: Colors.grey[400],
+                                        color: Color(0xFF5A6A85),
                                         size: 18,
                                       ),
                                     ],
@@ -917,7 +1111,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                               width: double.infinity,
                               padding: const EdgeInsets.fromLTRB(20, 0, 20, 12),
                               decoration: BoxDecoration(
-                                color: Colors.green.withOpacity(0.06),
+                                color: Colors.green.withOpacity(0.04),
                                 borderRadius: BorderRadius.only(
                                   bottomLeft: Radius.circular(bottomRadius),
                                   bottomRight: Radius.circular(bottomRadius),
@@ -930,7 +1124,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                   Icon(
                                     Icons.chat_bubble_outline_rounded,
                                     size: 13,
-                                    color: Colors.green[500],
+                                    color: Colors.green.shade600,
                                   ),
                                   const SizedBox(width: 6),
                                   Expanded(
@@ -938,7 +1132,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                       memberNote,
                                       style: GoogleFonts.outfit(
                                         fontSize: 12,
-                                        color: Colors.green[700],
+                                        color: Colors.green.shade800,
                                         fontStyle: FontStyle.italic,
                                       ),
                                     ),
@@ -951,7 +1145,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                             Divider(
                               height: 1,
                               indent: 70,
-                              color: Colors.grey[100],
+                              color: const Color(0xFFDDE3F0).withOpacity(0.6),
                             ),
                         ],
                       );
@@ -967,13 +1161,14 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                     width: double.infinity,
                     padding: const EdgeInsets.all(14),
                     decoration: BoxDecoration(
-                      color: const Color(0xFF1A73E8).withOpacity(0.07),
+                      color: const Color(0xFF1A73E8).withOpacity(0.06),
                       borderRadius: BorderRadius.circular(16),
                       border: Border.all(
-                        color: const Color(0xFF1A73E8).withOpacity(0.2),
+                        color: const Color(0xFF1A73E8).withOpacity(0.15),
                       ),
                     ),
                     child: Row(
+                      crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         const Icon(
                           Icons.info_outline_rounded,
@@ -987,6 +1182,8 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                             style: GoogleFonts.outfit(
                               fontSize: 12,
                               color: const Color(0xFF1A73E8),
+                              fontWeight: FontWeight.w500,
+                              height: 1.4,
                             ),
                           ),
                         ),

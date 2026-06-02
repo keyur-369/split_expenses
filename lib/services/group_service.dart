@@ -538,6 +538,7 @@ class GroupService extends ChangeNotifier {
                     name: userData['name'] ?? 'Unknown',
                     email: userData['email'],
                     userId: memberId,
+                    upiId: userData['upiId'],
                   ),
                 );
               }
@@ -909,9 +910,13 @@ class GroupService extends ChangeNotifier {
   double getUserBalance(Group group, String? userId) {
     if (userId == null) return 0.0;
     final balances = getNetBalances(group);
+    final email = FirebaseAuth.instance.currentUser?.email;
     
     for (var p in group.participants) {
-      if (p.userId == userId || p.id == userId) {
+      final isMe = p.userId == userId ||
+          p.id == userId ||
+          (email != null && p.email != null && p.email!.isNotEmpty && p.email!.toLowerCase() == email.toLowerCase());
+      if (isMe) {
         return balances[p.id] ?? 0.0;
       }
     }

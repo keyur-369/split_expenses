@@ -1299,8 +1299,11 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     }
 
     final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+    final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
     final currentUserParticipant = group.participants.firstWhere(
-      (p) => p.userId == currentUserId,
+      (p) => p.userId == currentUserId ||
+             p.id == currentUserId ||
+             (currentUserEmail != null && p.email != null && p.email!.isNotEmpty && p.email!.toLowerCase() == currentUserEmail.toLowerCase()),
       orElse: () => Participant(id: '?', name: ''),
     );
     final hasSetUPI = currentUserParticipant.upiId != null &&
@@ -1373,7 +1376,9 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           final index = entry.key;
           final person = entry.value;
           final isOwner = person.userId == group.ownerId;
-          final isMe = person.userId == currentUserId;
+          final isMe = person.userId == currentUserId ||
+              person.id == currentUserId ||
+              (currentUserEmail != null && person.email != null && person.email!.isNotEmpty && person.email!.toLowerCase() == currentUserEmail.toLowerCase());
           final hasUPI = person.upiId != null && person.upiId!.isNotEmpty;
 
           return Column(

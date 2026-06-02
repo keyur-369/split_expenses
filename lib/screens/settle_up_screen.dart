@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
 import '../models/group.dart';
 import '../models/participant.dart';
 import '../services/group_service.dart';
@@ -376,20 +375,75 @@ class _SummaryHeaderCard extends StatelessWidget {
               if (group.ownerId != null &&
                   FirebaseAuth.instance.currentUser?.uid != group.ownerId)
                 Builder(builder: (context) {
+                  final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+                  final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
+
+                  final currentUserParticipant = group.participants.firstWhere(
+                    (p) => p.userId == currentUserId ||
+                           p.id == currentUserId ||
+                           (currentUserEmail != null && p.email != null && p.email!.isNotEmpty && p.email!.toLowerCase() == currentUserEmail.toLowerCase()),
+                    orElse: () => Participant(id: '?', name: ''),
+                  );
+
                   final owner = group.participants.firstWhere(
                     (p) => p.userId == group.ownerId,
                     orElse: () => Participant(id: '?', name: ''),
                   );
+
                   if (owner.upiId == null || owner.upiId!.isEmpty) {
                     return const SizedBox.shrink();
                   }
+
+                  // Build settlements to get exact debt
+                  final Map<String, double> balancesCopy = Map.from(balances);
+                  final debtors = <MapEntry<String, double>>[];
+                  final creditors = <MapEntry<String, double>>[];
+
+                  balancesCopy.forEach((id, amount) {
+                    if (amount < -0.01) debtors.add(MapEntry(id, amount));
+                    if (amount > 0.01) creditors.add(MapEntry(id, amount));
+                  });
+
+                  debtors.sort((a, b) => a.value.compareTo(b.value));
+                  creditors.sort((a, b) => b.value.compareTo(a.value));
+
+                  double debtToOwner = 0.0;
+                  int i = 0, j = 0, safety = 0;
+                  while (i < debtors.length && j < creditors.length) {
+                    if (safety++ > 1000) break;
+                    var debtor = debtors[i];
+                    var creditor = creditors[j];
+                    final amount = (-debtor.value) < creditor.value
+                        ? (-debtor.value)
+                        : creditor.value;
+                    if (amount < 0.0001) {
+                      i++;
+                      j++;
+                      continue;
+                    }
+
+                    if (debtor.key == currentUserParticipant.id && creditor.key == owner.id) {
+                      debtToOwner = amount;
+                      break;
+                    }
+
+                    debtors[i] = MapEntry(debtor.key, debtor.value + amount);
+                    creditors[j] = MapEntry(creditor.key, creditor.value - amount);
+                    if (debtors[i].value.abs() < 0.001) i++;
+                    if (creditors[j].value < 0.001) j++;
+                  }
+
+                  if (debtToOwner <= 0.01) {
+                    return const SizedBox.shrink();
+                  }
+
                   return GestureDetector(
                     onTap: () {
                       showUpiPaymentSheet(
                         context,
                         upiId: owner.upiId!,
                         payeeName: owner.name,
-                        amount: group.expenses.fold(0.0, (s, e) => s + e.amount),
+                        amount: debtToOwner,
                         description: 'Payment to group owner',
                       );
                     },
@@ -401,13 +455,13 @@ class _SummaryHeaderCard extends StatelessWidget {
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.white30),
                       ),
-                      child: const Row(
+                      child: Row(
                         children: [
-                          Icon(Icons.account_balance_wallet,
+                          const Icon(Icons.account_balance_wallet,
                               color: Colors.white, size: 14),
-                          SizedBox(width: 4),
-                          Text('Pay Owner',
-                              style: TextStyle(
+                          const SizedBox(width: 4),
+                          Text('Pay Owner (₹${debtToOwner.toStringAsFixed(2)})',
+                              style: const TextStyle(
                                   color: Colors.white,
                                   fontSize: 11,
                                   fontWeight: FontWeight.bold)),
@@ -680,10 +734,17 @@ class _SettlementCardState extends State<_SettlementCard> {
                     s.creditorUpiId != null &&
                     s.creditorUpiId!.isNotEmpty &&
                     widget.group.participants.any(
-                      (p) =>
-                          p.id == s.debtorId &&
-                          p.userId ==
-                              FirebaseAuth.instance.currentUser?.uid,
+                      (p) {
+                        final currentUserId = FirebaseAuth.instance.currentUser?.uid;
+                        final currentUserEmail = FirebaseAuth.instance.currentUser?.email;
+                        final isMe = p.userId == currentUserId ||
+                            p.id == currentUserId ||
+                            (currentUserEmail != null &&
+                                p.email != null &&
+                                p.email!.isNotEmpty &&
+                                p.email!.toLowerCase() == currentUserEmail.toLowerCase());
+                        return p.id == s.debtorId && isMe;
+                      },
                     ))
                   Padding(
                     padding: const EdgeInsets.only(right: 8),
