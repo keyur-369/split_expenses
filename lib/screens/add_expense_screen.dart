@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/group.dart';
+import '../models/participant.dart';
 import '../services/group_service.dart';
 
 class AddExpenseScreen extends StatefulWidget {
@@ -47,7 +48,23 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         _involvedIds.toList(),
       );
 
-      Navigator.pop(context);
+      // Find the payer participant object
+      final payerPart = widget.group.participants.firstWhere(
+        (p) => p.id == _payerId,
+        orElse: () => Participant(id: _payerId!, name: "Unknown Payer"),
+      );
+
+      // Find debtor participant objects (involved members who are NOT the payer)
+      final debtorParts = widget.group.participants
+          .where((p) => _involvedIds.contains(p.id) && p.id != _payerId)
+          .toList();
+
+      Navigator.pop(context, {
+        'title': title,
+        'amount': amount,
+        'payer': payerPart,
+        'debtors': debtorParts,
+      });
     }
   }
 

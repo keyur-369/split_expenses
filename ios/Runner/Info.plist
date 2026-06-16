@@ -45,6 +45,16 @@
 	<true/>
 	<key>UIApplicationSupportsIndirectInputEvents</key>
 	<true/>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>upi</string>
+		<string>gpay</string>
+		<string>tez</string>
+		<string>phonepe</string>
+		<string>paytm</string>
+		<string>paytmmp</string>
+		<string>bhim</string>
+	</array>
 	<key>NSContactsUsageDescription</key>
 	<string>We need access to your contacts to add participants to expense groups.</string>
 </dict>

@@ -8,8 +8,14 @@ import '../models/group.dart';
 import '../models/expense.dart';
 import '../models/participant.dart';
 import '../services/group_service.dart';
+import 'dart:io';
+import 'dart:typed_data';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../widgets/expense_tile.dart';
 import '../widgets/add_participant_dialog.dart';
+import '../widgets/upi_payment_sheet.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import 'add_expense_screen.dart';
@@ -684,6 +690,258 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     }
   }
 
+  Future<void> _shareSplitToWhatsApp(
+    BuildContext context, {
+    required Group group,
+    required String title,
+    required double shareAmount,
+    required Participant payer,
+    required Participant debtor,
+  }) async {
+    try {
+      final String formattedAmount = shareAmount.toStringAsFixed(2);
+      final String upiUri = payer.upiId != null && payer.upiId!.trim().isNotEmpty
+          ? 'upi://pay?pa=${payer.upiId!.trim()}&pn=${Uri.encodeComponent(payer.name)}&am=$formattedAmount&cu=INR&tn=${Uri.encodeComponent("Payment for $title")}'
+          : '';
+
+      final String message = '💸 Split Expenses Payment Request\n'
+          '---------------------------------\n'
+          'Payee: ${payer.name}\n'
+          'Amount: ₹$formattedAmount\n'
+          'UPI ID: ${payer.upiId ?? "N/A"}\n\n'
+          'Direct Payment Link:\n'
+          '$upiUri';
+
+      if (payer.upiId != null && payer.upiId!.trim().isNotEmpty) {
+        // Generate QR code bytes in memory
+        final qrPainter = QrPainter(
+          data: upiUri,
+          version: QrVersions.auto,
+          eyeStyle: const QrEyeStyle(
+            eyeShape: QrEyeShape.square,
+            color: Color(0xFF1B1B1B),
+          ),
+          dataModuleStyle: const QrDataModuleStyle(
+            dataModuleShape: QrDataModuleShape.square,
+            color: Color(0xFF1B1B1B),
+          ),
+          gapless: true,
+        );
+        final ByteData? byteData = await qrPainter.toImageData(400);
+        if (byteData != null) {
+          final Uint8List pngBytes = byteData.buffer.asUint8List();
+
+          // Write to temp file
+          final tempDir = await getTemporaryDirectory();
+          final file = await File('${tempDir.path}/upi_split_qr_${debtor.id}.png').create();
+          await file.writeAsBytes(pngBytes);
+
+          // Share image + text caption
+          await Share.shareXFiles(
+            [XFile(file.path)],
+            text: message,
+          );
+          return;
+        }
+      }
+
+      // Fallback: If no UPI ID is configured for the payer, just share the text message
+      await Share.shareXFiles(
+        [],
+        text: message,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to generate or share QR: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    }
+  }
+
+  void _showShareSplitSheet(
+    BuildContext context,
+    Group group,
+    Map<String, dynamic> data,
+  ) {
+    final String title = data['title'] as String;
+    final double amount = data['amount'] as double;
+    final Participant payer = data['payer'] as Participant;
+    final List<Participant> debtors = data['debtors'] as List<Participant>;
+
+    if (debtors.isEmpty) return;
+
+    // Split equally among payer + debtors
+    final double shareAmount = amount / (debtors.length + 1);
+
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (sheetCtx) => Container(
+        padding: EdgeInsets.fromLTRB(
+          20, 16, 20,
+          MediaQuery.of(sheetCtx).viewInsets.bottom + 32,
+        ),
+        decoration: BoxDecoration(
+          color: Theme.of(sheetCtx).scaffoldBackgroundColor,
+          borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+          boxShadow: [
+            BoxShadow(
+              color: Colors.black.withOpacity(0.12),
+              blurRadius: 24,
+              offset: const Offset(0, -4),
+            ),
+          ],
+        ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Center(
+              child: Container(
+                width: 40,
+                height: 4,
+                margin: const EdgeInsets.only(bottom: 20),
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+            ),
+            Text(
+              'Share Split Request',
+              style: GoogleFonts.outfit(
+                fontSize: 22,
+                fontWeight: FontWeight.bold,
+                color: Theme.of(sheetCtx).colorScheme.primary,
+              ),
+            ),
+            const SizedBox(height: 6),
+            Text(
+              'Select a member to send payment details / QR Code on WhatsApp',
+              textAlign: TextAlign.center,
+              style: TextStyle(
+                color: Theme.of(sheetCtx).brightness == Brightness.dark
+                    ? Colors.grey[400]
+                    : Colors.grey[600],
+                fontSize: 13,
+              ),
+            ),
+            const SizedBox(height: 16),
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: MediaQuery.of(sheetCtx).size.height * 0.4,
+              ),
+              child: ListView.builder(
+                shrinkWrap: true,
+                itemCount: debtors.length,
+                itemBuilder: (context, index) {
+                  final debtor = debtors[index];
+                  return Card(
+                    margin: const EdgeInsets.symmetric(vertical: 6),
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(16),
+                      side: BorderSide(
+                        color: Theme.of(sheetCtx).brightness == Brightness.dark
+                            ? Colors.grey[850]!
+                            : Colors.grey[200]!,
+                      ),
+                    ),
+                    color: Theme.of(sheetCtx).brightness == Brightness.dark
+                        ? Colors.grey[900]
+                        : Colors.white,
+                    child: ListTile(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      title: Text(
+                        debtor.name,
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 15,
+                        ),
+                      ),
+                      subtitle: Text(
+                        'Owes ₹${shareAmount.toStringAsFixed(2)} for "$title"',
+                        style: TextStyle(
+                          color: Theme.of(sheetCtx).brightness == Brightness.dark
+                              ? Colors.grey[400]
+                              : Colors.grey[600],
+                          fontSize: 12,
+                        ),
+                      ),
+                      trailing: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          // WhatsApp button for text reminder
+                          IconButton(
+                            icon: const Icon(Icons.chat_bubble_outline_rounded, color: Color(0xFF25D366)),
+                            tooltip: 'Send Text Request',
+                            onPressed: () => _shareSplitToWhatsApp(
+                              context,
+                              group: group,
+                              title: title,
+                              shareAmount: shareAmount,
+                              payer: payer,
+                              debtor: debtor,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          // QR Payment Sheet launcher
+                          IconButton(
+                            icon: Icon(Icons.qr_code_2_rounded, color: Theme.of(sheetCtx).colorScheme.primary),
+                            tooltip: 'Show QR Code / Pay Sheet',
+                            onPressed: () {
+                              Navigator.pop(sheetCtx);
+                              if (payer.upiId == null || payer.upiId!.trim().isEmpty) {
+                                ScaffoldMessenger.of(context).showSnackBar(
+                                  SnackBar(
+                                    content: Text('Note: ${payer.name} has no UPI ID. Share request details or add UPI ID to their profile.'),
+                                    behavior: SnackBarBehavior.floating,
+                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                                  ),
+                                );
+                              }
+                              showUpiPaymentSheet(
+                                context,
+                                upiId: payer.upiId ?? '',
+                                payeeName: payer.name,
+                                amount: shareAmount,
+                                description: 'Split: $title',
+                              );
+                            },
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: TextButton(
+                onPressed: () => Navigator.pop(sheetCtx),
+                child: Text(
+                  'Dismiss',
+                  style: GoogleFonts.outfit(
+                    fontWeight: FontWeight.bold,
+                    color: Colors.grey[500],
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<GroupService>(
@@ -893,12 +1151,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   );
                   _tabController.animateTo(1);
                 } else {
-                  Navigator.push(
+                  Navigator.push<Map<String, dynamic>>(
                     context,
                     MaterialPageRoute(
                       builder: (_) => AddExpenseScreen(group: group),
                     ),
-                  );
+                  ).then((result) {
+                    if (result != null && context.mounted) {
+                      _showShareSplitSheet(context, group, result);
+                    }
+                  });
                 }
               } else {
                 _showAddParticipantDialog(context, group);

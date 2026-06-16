@@ -3,6 +3,7 @@
 import 'dart:developer' as developer;
 import 'package:flutter/material.dart';
 import 'package:flutter_upi_india/flutter_upi_india.dart' as f_upi;
+import 'package:url_launcher/url_launcher.dart';
 
 // ─────────────────────────────────────────────────────────────
 // CUSTOM UPI EXCEPTIONS (Retained for backward compatibility)
@@ -259,5 +260,50 @@ class UpiPaymentService {
     if (lowerName.contains('paytm')) return 'T';
     if (lowerName.contains('bhim')) return 'B';
     return name.isNotEmpty ? name[0].toUpperCase() : 'U';
+  }
+
+  /// Launches a UPI App directly to its home screen.
+  /// Returns true if launched successfully.
+  Future<bool> launchUpiAppDirectly(f_upi.UpiApplication app) async {
+    String scheme = '';
+    if (app == f_upi.UpiApplication.googlePay) {
+      scheme = 'gpay';
+    } else if (app == f_upi.UpiApplication.phonePe) {
+      scheme = 'phonepe';
+    } else if (app == f_upi.UpiApplication.paytm) {
+      scheme = 'paytmmp';
+    } else if (app == f_upi.UpiApplication.bhim) {
+      scheme = 'bhim';
+    } else if (app == f_upi.UpiApplication.amazonPay) {
+      scheme = 'amazonpay';
+    }
+
+    if (scheme.isNotEmpty) {
+      try {
+        final Uri url = Uri.parse('$scheme://');
+        if (await canLaunchUrl(url)) {
+          final success = await launchUrl(url, mode: LaunchMode.externalApplication);
+          developer.log('Direct launch of $scheme:// success=$success', name: _tag);
+          return success;
+        } else {
+          developer.log('canLaunchUrl returned false for $scheme://', name: _tag);
+        }
+      } catch (e) {
+        developer.log('Error direct launching app $scheme: $e', name: _tag);
+      }
+    }
+
+    // Fallback: Try launching using common standard intent or general upi:// scheme
+    try {
+      final Uri genericUpi = Uri.parse('upi://');
+      if (await canLaunchUrl(genericUpi)) {
+        final success = await launchUrl(genericUpi, mode: LaunchMode.externalApplication);
+        return success;
+      }
+    } catch (e) {
+      developer.log('Error launching generic upi://: $e', name: _tag);
+    }
+
+    return false;
   }
 }

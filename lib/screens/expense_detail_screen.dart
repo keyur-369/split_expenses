@@ -1,9 +1,14 @@
+import 'dart:io';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:qr_flutter/qr_flutter.dart';
+import 'package:share_plus/share_plus.dart';
+import 'package:path_provider/path_provider.dart';
 import '../models/expense.dart';
 import '../models/group.dart';
 import '../models/participant.dart';
@@ -526,6 +531,76 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
     );
   }
 
+  Future<void> _shareSplitToWhatsApp(
+    BuildContext context, {
+    required Group group,
+    required String title,
+    required double shareAmount,
+    required Participant payer,
+    required Participant debtor,
+  }) async {
+    try {
+      final String formattedAmount = shareAmount.toStringAsFixed(2);
+      final String upiUri = payer.upiId != null && payer.upiId!.trim().isNotEmpty
+          ? 'upi://pay?pa=${payer.upiId!.trim()}&pn=${Uri.encodeComponent(payer.name)}&am=$formattedAmount&cu=INR&tn=${Uri.encodeComponent("Payment for $title")}'
+          : '';
+
+      final String message = '💸 Split Expenses Payment Request\n'
+          '---------------------------------\n'
+          'Payee: ${payer.name}\n'
+          'Amount: ₹$formattedAmount\n'
+          'UPI ID: ${payer.upiId ?? "N/A"}\n\n'
+          'Direct Payment Link:\n'
+          '$upiUri';
+
+      if (payer.upiId != null && payer.upiId!.trim().isNotEmpty) {
+        final qrPainter = QrPainter(
+          data: upiUri,
+          version: QrVersions.auto,
+          eyeStyle: const QrEyeStyle(
+            eyeShape: QrEyeShape.square,
+            color: Color(0xFF1B1B1B),
+          ),
+          dataModuleStyle: const QrDataModuleStyle(
+            dataModuleShape: QrDataModuleShape.square,
+            color: Color(0xFF1B1B1B),
+          ),
+          gapless: true,
+        );
+        final ByteData? byteData = await qrPainter.toImageData(400);
+        if (byteData != null) {
+          final Uint8List pngBytes = byteData.buffer.asUint8List();
+
+          final tempDir = await getTemporaryDirectory();
+          final file = await File('${tempDir.path}/upi_split_qr_${debtor.id}.png').create();
+          await file.writeAsBytes(pngBytes);
+
+          await Share.shareXFiles(
+            [XFile(file.path)],
+            text: message,
+          );
+          return;
+        }
+      }
+
+      await Share.shareXFiles(
+        [],
+        text: message,
+      );
+    } catch (e) {
+      if (context.mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to generate or share QR: $e'),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Consumer<GroupService>(
@@ -818,6 +893,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                       final memberNote =
                           !isPayer ? _note(liveGroup, id) : null;
                       final loading = _loadingIds.contains(id);
+                      final canManage = isOwner || (widget.expense.payerId == currentUserId);
 
                       final isLast = idx ==
                           widget.expense.involvedParticipantIds.length - 1;
@@ -867,7 +943,7 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                               ),
                             ),
                             child: InkWell(
-                              onLongPress: isOwner && isDebtor
+                              onLongPress: canManage && isDebtor
                                   ? () {
                                       HapticFeedback.mediumImpact();
                                       _showMarkPaidSheet(
@@ -1091,12 +1167,89 @@ class _ExpenseDetailScreenState extends State<ExpenseDetailScreen> {
                                         ],
                                       ),
 
-                                    if (isOwner && isDebtor && !loading) ...[
+                                    if (canManage && isDebtor && !loading) ...[
                                       const SizedBox(width: 10),
-                                      const Icon(
-                                        Icons.more_horiz,
-                                        color: Color(0xFF5A6A85),
-                                        size: 18,
+                                      PopupMenuButton<String>(
+                                        icon: const Icon(
+                                          Icons.more_horiz,
+                                          color: Color(0xFF5A6A85),
+                                          size: 18,
+                                        ),
+                                        padding: EdgeInsets.zero,
+                                        constraints: const BoxConstraints(),
+                                        onSelected: (value) {
+                                          if (value == 'mark_paid') {
+                                            _showMarkPaidSheet(
+                                              context,
+                                              service,
+                                              liveGroup,
+                                              person,
+                                              splitAmount,
+                                            );
+                                          } else if (value == 'whatsapp') {
+                                            _shareSplitToWhatsApp(
+                                              context,
+                                              group: liveGroup,
+                                              title: widget.expense.title,
+                                              shareAmount: splitAmount,
+                                              payer: payerParticipant,
+                                              debtor: person,
+                                            );
+                                          } else if (value == 'show_qr') {
+                                            _payViaUPI(
+                                              payerUpiId ?? '',
+                                              splitAmount,
+                                              payerName,
+                                            );
+                                          }
+                                        },
+                                        itemBuilder: (BuildContext context) => <PopupMenuEntry<String>>[
+                                          PopupMenuItem<String>(
+                                            value: 'mark_paid',
+                                            child: Row(
+                                              children: [
+                                                Icon(
+                                                  paid ? Icons.undo_rounded : Icons.check_circle_outline,
+                                                  size: 18,
+                                                  color: paid ? Colors.orange : Colors.green,
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(paid ? 'Unmark as Paid' : 'Mark as Paid'),
+                                              ],
+                                            ),
+                                          ),
+                                          PopupMenuItem<String>(
+                                            value: 'whatsapp',
+                                            child: Row(
+                                              children: [
+                                                const Icon(
+                                                  Icons.share_rounded,
+                                                  size: 18,
+                                                  color: Color(0xFF25D366),
+                                                ),
+                                                const SizedBox(width: 8),
+                                                Text(payerUpiId != null && payerUpiId.isNotEmpty
+                                                    ? 'Send WhatsApp QR'
+                                                    : 'Send WhatsApp Request'),
+                                              ],
+                                            ),
+                                          ),
+                                          if (payerUpiId != null && payerUpiId.isNotEmpty)
+                                            PopupMenuItem<String>(
+                                              value: 'show_qr',
+                                              child: Row(
+                                                children: const [
+                                                  Icon(
+                                                    Icons.qr_code_2_rounded,
+                                                    size: 18,
+                                                    color: Colors.blue,
+                                                  ),
+                                                  SizedBox(width: 8),
+                                                  Text('Show QR Code'),
+                                                ],
+                                              ),
+                                            ),
+                                        ],
                                       ),
                                     ],
                                   ],
