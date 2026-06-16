@@ -59,7 +59,7 @@ class _GroupListScreenState extends State<GroupListScreen>
 
   double _getUserBalance(Group group, String? uid, GroupService service) {
     if (uid == null) return 0.0;
-    final balances = service.getNetBalances(group);
+    final balances = service.getOutstandingBalances(group);
     String? participantId;
     for (var p in group.participants) {
       if (p.userId == uid || p.id == uid) {

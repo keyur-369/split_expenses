@@ -1,56 +1,11 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:url_launcher/url_launcher.dart';
+import 'package:flutter_upi_india/flutter_upi_india.dart' show UpiApplication;
+import '../services/upi_payment_service.dart';
 
 // ─────────────────────────────────────────────────────────────
-// Configuration for each UPI app
-// ─────────────────────────────────────────────────────────────
-class _UpiApp {
-  final String name;
-  final String Function(String params) buildUri; // app-specific deep link
-  final Color  bgColor;
-  final String label;
-
-  const _UpiApp({
-    required this.name,
-    required this.buildUri,
-    required this.bgColor,
-    required this.label,
-  });
-}
-
-// Each app's deep-link URI format.  All fall back to generic upi:// inside _launch().
-final _kApps = <_UpiApp>[
-  _UpiApp(
-    name: 'Google Pay',
-    // Google Pay responds to both gpay:// and tez://
-    buildUri: (p) => 'gpay://upi/pay?$p',
-    bgColor: const Color(0xFF1A73E8),
-    label: 'G',
-  ),
-  _UpiApp(
-    name: 'PhonePe',
-    buildUri: (p) => 'phonepe://pay?$p',
-    bgColor: const Color(0xFF5F259F),
-    label: 'P',
-  ),
-  _UpiApp(
-    name: 'Paytm',
-    buildUri: (p) => 'paytmmp://pay?$p',
-    bgColor: const Color(0xFF002970),
-    label: 'T',
-  ),
-  _UpiApp(
-    name: 'BHIM',
-    buildUri: (p) => 'upi://pay?$p',
-    bgColor: const Color(0xFF00897B),
-    label: 'B',
-  ),
-];
-
-// ─────────────────────────────────────────────────────────────
-// Public entry point
+// Public entry point (remains identical to preserve existing APIs)
 // ─────────────────────────────────────────────────────────────
 Future<void> showUpiPaymentSheet(
   BuildContext context, {
@@ -75,7 +30,7 @@ Future<void> showUpiPaymentSheet(
 // ─────────────────────────────────────────────────────────────
 // Sheet widget
 // ─────────────────────────────────────────────────────────────
-class _UpiPaymentSheet extends StatelessWidget {
+class _UpiPaymentSheet extends StatefulWidget {
   final String  upiId;
   final String  payeeName;
   final double  amount;
@@ -88,69 +43,188 @@ class _UpiPaymentSheet extends StatelessWidget {
     this.description,
   });
 
-  // Build the UPI query params
-  String get _params {
-    final buf = StringBuffer()
-      ..write('pa=${Uri.encodeComponent(upiId)}')
-      ..write('&pn=${Uri.encodeComponent(payeeName)}')
-      ..write('&am=${amount.toStringAsFixed(2)}')
-      ..write('&cu=INR');
-    if (description != null && description!.trim().isNotEmpty) {
-      buf.write('&tn=${Uri.encodeComponent(description!.trim())}');
-    }
-    return buf.toString();
+  @override
+  State<_UpiPaymentSheet> createState() => _UpiPaymentSheetState();
+}
+
+class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
+  final UpiPaymentService _paymentService = UpiPaymentService();
+  List<UpiAppInfo> _installedApps = [];
+  bool _loadingApps = true;
+
+  // Fallback list of predefined apps with manually constructed UpiApplication mapping
+  static final List<UpiAppInfo> _kFallbackApps = [
+    UpiAppInfo(
+      name: 'Google Pay',
+      upiApplication: UpiApplication.googlePay,
+      bgColor: const Color(0xFF1A73E8),
+      label: 'G',
+    ),
+    UpiAppInfo(
+      name: 'PhonePe',
+      upiApplication: UpiApplication.phonePe,
+      bgColor: const Color(0xFF5F259F),
+      label: 'P',
+    ),
+    UpiAppInfo(
+      name: 'Paytm',
+      upiApplication: UpiApplication.paytm,
+      bgColor: const Color(0xFF002970),
+      label: 'T',
+    ),
+    UpiAppInfo(
+      name: 'BHIM',
+      upiApplication: UpiApplication.bhim,
+      bgColor: const Color(0xFF00897B),
+      label: 'B',
+    ),
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadInstalledApps();
   }
 
-  // Generic upi:// URI — always works as long as ANY UPI app is installed
-  Uri get _genericUri => Uri.parse('upi://pay?$_params');
-
-  Future<void> _launch(BuildContext context, _UpiApp app) async {
-    bool launched = false;
-
-    // 1️⃣ Try app-specific deep link
+  Future<void> _loadInstalledApps() async {
+    setState(() => _loadingApps = true);
     try {
-      final specific = Uri.parse(app.buildUri(_params));
-      launched = await launchUrl(specific, mode: LaunchMode.externalApplication);
-    } catch (_) {}
-
-    // 2️⃣ Fallback → generic upi:// (lets OS pick any installed UPI app)
-    if (!launched) {
-      try {
-        launched = await launchUrl(_genericUri, mode: LaunchMode.externalApplication);
-      } catch (_) {}
+      final apps = await _paymentService.getInstalledUpiApps();
+      if (mounted) {
+        setState(() {
+          _installedApps = apps.isNotEmpty ? apps : _kFallbackApps;
+          _loadingApps = false;
+        });
+      }
+    } catch (_) {
+      if (mounted) {
+        setState(() {
+          _installedApps = _kFallbackApps;
+          _loadingApps = false;
+        });
+      }
     }
-
-    if (!launched && context.mounted) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-        content: Text('No UPI app found. Please install Google Pay, PhonePe or Paytm.'),
-        backgroundColor: Colors.red,
-        behavior: SnackBarBehavior.floating,
-      ));
-    }
-
-    if (context.mounted) Navigator.pop(context);
   }
 
-  Future<void> _launchAny(BuildContext context) async {
+  Future<void> _handlePayment(BuildContext context, UpiApplication app) async {
     try {
-      final ok = await launchUrl(_genericUri, mode: LaunchMode.externalApplication);
-      if (!ok && context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text('No UPI app found on this device.'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
+      // Validate inputs locally first
+      UpiPaymentService.validateParameters(
+        upiId: widget.upiId,
+        receiverName: widget.payeeName,
+        amount: widget.amount,
+        note: widget.description ?? '',
+      );
+
+      final result = await _paymentService.launchUpiPayment(
+        app: app,
+        upiId: widget.upiId,
+        receiverName: widget.payeeName,
+        amount: widget.amount,
+        note: widget.description ?? '',
+      );
+
+      if (context.mounted) {
+        String msg = '';
+        Color bgColor = Colors.green;
+        switch (result.status) {
+          case UpiTransactionStatus.SUCCESS:
+            msg = 'Payment Successful! ID: ${result.transactionId ?? "N/A"}';
+            bgColor = Colors.green;
+            break;
+          case UpiTransactionStatus.SUBMITTED:
+            msg = 'Payment Submitted/Pending. Ref: ${result.approvalRefNo ?? "N/A"}';
+            bgColor = Colors.blue;
+            break;
+          case UpiTransactionStatus.USER_CANCELLED:
+            msg = 'Payment cancelled by user.';
+            bgColor = Colors.orange;
+            break;
+          case UpiTransactionStatus.FAILURE:
+            msg = 'Payment failed.';
+            bgColor = Colors.red;
+            break;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(msg),
+            backgroundColor: bgColor,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
       }
     } catch (e) {
       if (context.mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(
-          content: Text('Error: $e'),
-          backgroundColor: Colors.red,
-          behavior: SnackBarBehavior.floating,
-        ));
+        String errMsg = 'Payment failed: $e';
+        if (e is InvalidUpiIdException) {
+          errMsg = e.message;
+        } else if (e is InvalidAmountException) {
+          errMsg = e.message;
+        } else if (e is UpiAppNotInstalledException) {
+          errMsg = e.message;
+        } else if (e is UpiPaymentCancelledException) {
+          errMsg = 'Payment cancelled by user.';
+        } else if (e is UpiPaymentFailedException) {
+          errMsg = e.message;
+        }
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(errMsg),
+            backgroundColor: Colors.red,
+            behavior: SnackBarBehavior.floating,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          ),
+        );
+      }
+    } finally {
+      if (context.mounted) {
+        Navigator.pop(context);
       }
     }
-    if (context.mounted) Navigator.pop(context);
+  }
+
+  void _showAppChooserDialog(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (dialogCtx) => AlertDialog(
+        title: const Text('Select UPI App'),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: ListView.builder(
+            shrinkWrap: true,
+            itemCount: _installedApps.length,
+            itemBuilder: (context, index) {
+              final app = _installedApps[index];
+              return ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: app.bgColor,
+                  child: app.iconImage != null
+                      ? ClipOval(
+                          child: SizedBox(
+                            width: 40,
+                            height: 40,
+                            child: app.iconImage,
+                          ),
+                        )
+                      : Text(app.label, style: const TextStyle(color: Colors.white)),
+                ),
+                title: Text(app.name),
+                onTap: () {
+                  Navigator.pop(dialogCtx);
+                  if (app.upiApplication != null) {
+                    _handlePayment(context, app.upiApplication!);
+                  }
+                },
+              );
+            },
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -177,7 +251,8 @@ class _UpiPaymentSheet extends StatelessWidget {
           // ── Handle ─────────────────────────────────────────
           Center(
             child: Container(
-              width: 40, height: 4,
+              width: 40,
+              height: 4,
               margin: const EdgeInsets.only(bottom: 20),
               decoration: BoxDecoration(
                 color: Colors.grey[300],
@@ -188,7 +263,7 @@ class _UpiPaymentSheet extends StatelessWidget {
 
           // ── Amount header ───────────────────────────────────
           Text(
-            '₹${amount.toStringAsFixed(2)}',
+            '₹${widget.amount.toStringAsFixed(2)}',
             style: GoogleFonts.outfit(
               fontSize: 36,
               fontWeight: FontWeight.bold,
@@ -197,7 +272,7 @@ class _UpiPaymentSheet extends StatelessWidget {
           ),
           const SizedBox(height: 4),
           Text(
-            'to $payeeName',
+            'to ${widget.payeeName}',
             style: TextStyle(color: Colors.grey[600], fontSize: 16),
           ),
           const SizedBox(height: 10),
@@ -205,7 +280,7 @@ class _UpiPaymentSheet extends StatelessWidget {
           // ── UPI ID pill with Copy ─────────────────────────────────────
           InkWell(
             onTap: () {
-              Clipboard.setData(ClipboardData(text: upiId));
+              Clipboard.setData(ClipboardData(text: widget.upiId));
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text('UPI ID copied to clipboard'),
@@ -227,7 +302,7 @@ class _UpiPaymentSheet extends StatelessWidget {
                   Icon(Icons.copy_rounded, size: 14, color: Colors.grey[600]),
                   const SizedBox(width: 8),
                   Text(
-                    upiId,
+                    widget.upiId,
                     style: TextStyle(
                       color: Colors.grey[700],
                       fontSize: 13,
@@ -239,12 +314,17 @@ class _UpiPaymentSheet extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
+
           // ── Help Note ───────────────────────────────────────
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24),
             child: Text(
               'If your bank blocks the direct payment, copy the UPI ID above and pay manually in your app.',
-              style: TextStyle(fontSize: 11, color: Colors.grey[500], fontStyle: FontStyle.italic),
+              style: TextStyle(
+                fontSize: 11,
+                color: Colors.grey[500],
+                fontStyle: FontStyle.italic,
+              ),
               textAlign: TextAlign.center,
             ),
           ),
@@ -266,42 +346,82 @@ class _UpiPaymentSheet extends StatelessWidget {
           ),
           const SizedBox(height: 14),
 
-          // ── 4 app buttons ────────────────────────────────────
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-            children: _kApps
-                .map((app) => _AppTile(
-                      app: app,
-                      onTap: () => _launch(context, app),
-                    ))
-                .toList(),
-          ),
+          // ── App buttons row (dynamic or fallback list) ─────────────
+          if (_loadingApps)
+            const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: CircularProgressIndicator(),
+              ),
+            )
+          else
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              physics: const BouncingScrollPhysics(),
+              child: Row(
+                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                children: _installedApps
+                    .map((app) => Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                          child: _AppTile(
+                            app: app,
+                            onTap: () {
+                              if (app.upiApplication != null) {
+                                _handlePayment(context, app.upiApplication!);
+                              }
+                            },
+                          ),
+                        ))
+                    .toList(),
+              ),
+            ),
 
           const SizedBox(height: 20),
 
           // ── Divider ──────────────────────────────────────────
-          Row(children: [
-            Expanded(child: Divider(color: Colors.grey[200])),
-            Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12),
-              child: Text('or',
-                  style: TextStyle(color: Colors.grey[400], fontSize: 13)),
-            ),
-            Expanded(child: Divider(color: Colors.grey[200])),
-          ]),
+          Row(
+            children: [
+              Expanded(child: Divider(color: Colors.grey[200])),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Text(
+                  'or',
+                  style: TextStyle(color: Colors.grey[400], fontSize: 13),
+                ),
+              ),
+              Expanded(child: Divider(color: Colors.grey[200])),
+            ],
+          ),
           const SizedBox(height: 14),
 
           // ── Generic button ───────────────────────────────────
           SizedBox(
             width: double.infinity,
             child: OutlinedButton.icon(
-              onPressed: () => _launchAny(context),
+              onPressed: () {
+                if (_installedApps.isEmpty) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text('No UPI apps found. Please install one of the supported apps.'),
+                      behavior: SnackBarBehavior.floating,
+                    ),
+                  );
+                } else if (_installedApps.length == 1) {
+                  final app = _installedApps.first;
+                  if (app.upiApplication != null) {
+                    _handlePayment(context, app.upiApplication!);
+                  }
+                } else {
+                  _showAppChooserDialog(context);
+                }
+              },
               icon: const Icon(Icons.payments_outlined),
               label: const Text('Any UPI App'),
               style: OutlinedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 14),
                 shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(16)),
+                  borderRadius: BorderRadius.circular(16),
+                ),
                 side: BorderSide(color: Colors.grey.shade300),
               ),
             ),
@@ -318,10 +438,10 @@ class _UpiPaymentSheet extends StatelessWidget {
 }
 
 // ─────────────────────────────────────────────────────────────
-// App icon tile
+// Custom styled App Tile
 // ─────────────────────────────────────────────────────────────
 class _AppTile extends StatelessWidget {
-  final _UpiApp    app;
+  final UpiAppInfo app;
   final VoidCallback onTap;
 
   const _AppTile({required this.app, required this.onTap});
@@ -346,15 +466,24 @@ class _AppTile extends StatelessWidget {
                 ),
               ],
             ),
-            child: Center(
-              child: Text(
-                app.label,
-                style: const TextStyle(
-                  color: Colors.white,
-                  fontSize: 26,
-                  fontWeight: FontWeight.bold,
-                ),
-              ),
+            child: ClipRRect(
+              borderRadius: BorderRadius.circular(18),
+              child: app.iconImage != null
+                  ? SizedBox(
+                      width: 64,
+                      height: 64,
+                      child: app.iconImage,
+                    )
+                  : Center(
+                      child: Text(
+                        app.label,
+                        style: const TextStyle(
+                          color: Colors.white,
+                          fontSize: 26,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
             ),
           ),
           const SizedBox(height: 8),

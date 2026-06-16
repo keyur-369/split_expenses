@@ -55,22 +55,11 @@
             <action android:name="android.intent.action.PROCESS_TEXT"/>
             <data android:mimeType="text/plain"/>
         </intent>
-        <!-- UPI payment apps (Android 11+ requires explicit scheme queries) -->
+        <!-- CHANGED: Only standard UPI scheme needed (Android 11+ package visibility) -->
+        <!-- Removed gpay://, phonepe://, paytmmp:// — no longer targeting specific apps -->
         <intent>
             <action android:name="android.intent.action.VIEW"/>
             <data android:scheme="upi"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="gpay"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="phonepe"/>
-        </intent>
-        <intent>
-            <action android:name="android.intent.action.VIEW"/>
-            <data android:scheme="paytmmp"/>
         </intent>
     </queries>
 </manifest>

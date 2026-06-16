@@ -18,6 +18,7 @@ class GroupService extends ChangeNotifier {
   StreamSubscription<QuerySnapshot>? _groupsSubscription;
   final Map<String, StreamSubscription<QuerySnapshot>> _expenseSubscriptions =
       {};
+  String? _loadedUserId;
 
   List<Group> get groups => _groups;
   bool get isLoading => _isLoading;
@@ -33,16 +34,22 @@ class GroupService extends ChangeNotifier {
   }
 
   Future<void> loadGroups({bool forceRefresh = false}) async {
+    final user = FirebaseAuth.instance.currentUser;
+    final userChanged = user?.uid != _loadedUserId;
+
+    if (userChanged) {
+      forceRefresh = true;
+      _loadedUserId = user?.uid;
+    }
+
     // If already listening and not forced, don't restart everything
     if (_groupsSubscription != null && !forceRefresh) return;
 
     // Only show hard loading states if we don't have any data yet
-    if (_groups.isEmpty) {
+    if (_groups.isEmpty || userChanged) {
       _isLoading = true;
       notifyListeners();
     }
-
-    final user = FirebaseAuth.instance.currentUser;
 
     if (user != null) {
       // Cancel existing subscriptions before starting fresh
@@ -493,7 +500,7 @@ class GroupService extends ChangeNotifier {
       await _firestoreService.upsertGroup(
         id: group.id,
         name: group.name,
-        ownerId: user.uid,
+        ownerId: group.ownerId ?? user.uid,
         createdAt: group.createdAt,
         memberIds: memberIds,
       );
@@ -749,9 +756,8 @@ class GroupService extends ChangeNotifier {
     return balances;
   }
 
-  /// Returns a list of strings describing debts: "Alice owes Bob $10.00"
   List<String> getSettlements(Group group) {
-    Map<String, double> balances = getNetBalances(group);
+    Map<String, double> balances = getOutstandingBalances(group);
 
     List<MapEntry<String, double>> debtors = [];
     List<MapEntry<String, double>> creditors = [];
@@ -895,7 +901,7 @@ class GroupService extends ChangeNotifier {
 
   /// Returns true if all participants in the group have a net balance of zero.
   bool isGroupSettled(Group group) {
-    final balances = getNetBalances(group);
+    final balances = getOutstandingBalances(group);
     if (balances.isEmpty) return true;
     
     for (var balance in balances.values) {
@@ -906,10 +912,10 @@ class GroupService extends ChangeNotifier {
     return true;
   }
 
-  /// Returns the net balance for a specific Firebase user ID in the group.
+  /// Returns the outstanding balance for a specific Firebase user ID in the group.
   double getUserBalance(Group group, String? userId) {
     if (userId == null) return 0.0;
-    final balances = getNetBalances(group);
+    final balances = getOutstandingBalances(group);
     final email = FirebaseAuth.instance.currentUser?.email;
     
     for (var p in group.participants) {
@@ -921,5 +927,71 @@ class GroupService extends ChangeNotifier {
       }
     }
     return 0.0;
+  }
+
+  /// Calculates outstanding balances: Participant ID -> Amount
+  /// Takes both individual expense-level and global paid settlement keys into account.
+  Map<String, double> getOutstandingBalances(Group group) {
+    Map<String, double> balances = getNetBalances(group);
+
+    // 1. Adjust for individual expense-level settlements
+    for (var expense in group.expenses) {
+      if (expense.involvedParticipantIds.isEmpty) continue;
+      double splitAmount = expense.amount / expense.involvedParticipantIds.length;
+      for (var debtorId in expense.involvedParticipantIds) {
+        if (debtorId == expense.payerId) continue;
+        final key = '${expense.id}:${debtorId}_${expense.payerId}';
+        if (group.paidSettlementKeys.contains(key)) {
+          if (!balances.containsKey(debtorId)) balances[debtorId] = 0.0;
+          if (!balances.containsKey(expense.payerId)) balances[expense.payerId] = 0.0;
+          balances[debtorId] = (balances[debtorId] ?? 0.0) + splitAmount;
+          balances[expense.payerId] = (balances[expense.payerId] ?? 0.0) - splitAmount;
+        }
+      }
+    }
+
+    // 2. Adjust for global settlements
+    final debtors = <MapEntry<String, double>>[];
+    final creditors = <MapEntry<String, double>>[];
+
+    balances.forEach((id, amount) {
+      if (amount < -0.01) debtors.add(MapEntry(id, amount));
+      if (amount > 0.01) creditors.add(MapEntry(id, amount));
+    });
+
+    debtors.sort((a, b) => a.value.compareTo(b.value));
+    creditors.sort((a, b) => b.value.compareTo(a.value));
+
+    int i = 0, j = 0, safety = 0;
+    while (i < debtors.length && j < creditors.length) {
+      if (safety++ > 1000) break;
+      var debtor = debtors[i];
+      var creditor = creditors[j];
+      final amount = (-debtor.value) < creditor.value
+          ? (-debtor.value)
+          : creditor.value;
+      if (amount < 0.0001) {
+        i++;
+        j++;
+        continue;
+      }
+
+      final key = '${debtor.key}_${creditor.key}';
+      if (group.paidSettlementKeys.contains(key)) {
+        balances[debtor.key] = (balances[debtor.key] ?? 0.0) + amount;
+        balances[creditor.key] = (balances[creditor.key] ?? 0.0) - amount;
+
+        debtors[i] = MapEntry(debtor.key, debtor.value + amount);
+        creditors[j] = MapEntry(creditor.key, creditor.value - amount);
+      } else {
+        debtors[i] = MapEntry(debtor.key, debtor.value + amount);
+        creditors[j] = MapEntry(creditor.key, creditor.value - amount);
+      }
+
+      if (debtors[i].value.abs() < 0.001) i++;
+      if (creditors[j].value < 0.001) j++;
+    }
+
+    return balances;
   }
 }

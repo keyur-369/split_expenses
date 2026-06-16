@@ -9,10 +9,9 @@ class SummaryScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Watch service for updates if expenses change elsewhere, though typically we just view this.
     final service = Provider.of<GroupService>(context);
     final settlements = service.getSettlements(group);
-    final balances = service.getNetBalances(group);
+    final balances = service.getOutstandingBalances(group);
 
     return Scaffold(
       appBar: AppBar(title: const Text("Balances & Settlement")),

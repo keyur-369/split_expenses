@@ -828,6 +828,8 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   ),
                   child: TabBar(
                     controller: _tabController,
+                    overlayColor: WidgetStateProperty.all(Colors.transparent),
+                    splashFactory: NoSplash.splashFactory,
                     indicatorSize: TabBarIndicatorSize.tab,
                     indicator: BoxDecoration(
                       color: Colors.white,
@@ -1469,12 +1471,16 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                             Icon(Icons.payment_rounded,
                                 size: 12, color: Colors.blue.shade600),
                             const SizedBox(width: 4),
-                            Text(
-                              person.upiId!,
-                              style: TextStyle(
-                                fontSize: 11,
-                                color: Colors.blue.shade700,
-                                fontWeight: FontWeight.w500,
+                            Expanded(
+                              child: Text(
+                                person.upiId!,
+                                style: TextStyle(
+                                  fontSize: 11,
+                                  color: Colors.blue.shade700,
+                                  fontWeight: FontWeight.w500,
+                                ),
+                                maxLines: 1,
+                                overflow: TextOverflow.ellipsis,
                               ),
                             ),
                           ],
