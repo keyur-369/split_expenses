@@ -6,6 +6,7 @@ import 'package:flutter_upi_india/flutter_upi_india.dart' show UpiApplication;
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:share_plus/share_plus.dart';
 import 'package:path_provider/path_provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 import '../services/upi_payment_service.dart';
 
 // ─────────────────────────────────────────────────────────────
@@ -55,7 +56,7 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
   final UpiPaymentService _paymentService = UpiPaymentService();
   List<UpiAppInfo> _installedApps = [];
   bool _loadingApps = true;
-  int _selectedTabIndex = 0; // 0: Direct, 1: QR, 2: Manual
+  int _selectedTabIndex = 1; // 0: Direct, 1: QR, 2: Manual (Default to Scan QR)
   final GlobalKey _qrKey = GlobalKey();
   bool _sharingQr = false;
 
@@ -113,84 +114,38 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
     }
   }
 
+  /// Builds a standard UPI deep-link URL pre-filled with payee, amount and note.
+  /// This is the most compatible approach — it opens the UPI app directly on
+  /// the payment confirmation screen without going through a third-party SDK.
+  String _buildUpiUrl() {
+    final note = (widget.description ?? 'Split Expenses Payment').trim();
+    return 'upi://pay'
+        '?pa=${Uri.encodeComponent(widget.upiId.trim())}'
+        '&pn=${Uri.encodeComponent(widget.payeeName.trim())}'
+        '&am=${widget.amount.toStringAsFixed(2)}'
+        '&cu=INR'
+        '&tn=${Uri.encodeComponent(note.length > 80 ? note.substring(0, 80) : note)}';
+  }
+
+  /// Displays a message that direct payment is not available and redirects to the QR tab.
   Future<void> _handlePayment(BuildContext context, UpiApplication app) async {
-    try {
-      // Validate inputs locally first
-      UpiPaymentService.validateParameters(
-        upiId: widget.upiId,
-        receiverName: widget.payeeName,
-        amount: widget.amount,
-        note: widget.description ?? '',
-      );
-
-      final result = await _paymentService.launchUpiPayment(
-        app: app,
-        upiId: widget.upiId,
-        receiverName: widget.payeeName,
-        amount: widget.amount,
-        note: widget.description ?? '',
-      );
-
-      if (context.mounted) {
-        String msg = '';
-        Color bgColor = Colors.green;
-        switch (result.status) {
-          case UpiTransactionStatus.SUCCESS:
-            msg = 'Payment Successful! ID: ${result.transactionId ?? "N/A"}';
-            bgColor = Colors.green;
-            break;
-          case UpiTransactionStatus.SUBMITTED:
-            msg = 'Payment Submitted/Pending. Ref: ${result.approvalRefNo ?? "N/A"}';
-            bgColor = Colors.blue;
-            break;
-          case UpiTransactionStatus.USER_CANCELLED:
-            msg = 'Payment cancelled by user.';
-            bgColor = Colors.orange;
-            break;
-          case UpiTransactionStatus.FAILURE:
-            msg = 'Payment failed.';
-            bgColor = Colors.red;
-            break;
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(msg),
-            backgroundColor: bgColor,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+    if (context.mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Text(
+            'Direct payment is not available. Please use QR Code for payment.',
           ),
-        );
-      }
-    } catch (e) {
-      if (context.mounted) {
-        String errMsg = 'Payment failed: $e';
-        if (e is InvalidUpiIdException) {
-          errMsg = e.message;
-        } else if (e is InvalidAmountException) {
-          errMsg = e.message;
-        } else if (e is UpiAppNotInstalledException) {
-          errMsg = e.message;
-        } else if (e is UpiPaymentCancelledException) {
-          errMsg = 'Payment cancelled by user.';
-        } else if (e is UpiPaymentFailedException) {
-          errMsg = e.message;
-        }
-
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(
-            content: Text(errMsg),
-            backgroundColor: Colors.red,
-            behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          backgroundColor: Colors.orange,
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
           ),
-        );
-      }
-    } finally {
-      if (context.mounted) {
-        Navigator.pop(context);
-      }
+        ),
+      );
     }
+    setState(() {
+      _selectedTabIndex = 1; // Redirect to Scan QR tab
+    });
   }
 
   Future<void> _handleDirectLaunch(UpiApplication app) async {
@@ -202,7 +157,9 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
           content: Text('UPI ID Copied! Opening ${app.appName}...'),
           duration: const Duration(seconds: 3),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -211,10 +168,14 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
     if (!success && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text('Failed to launch ${app.appName} automatically. Please open it manually and paste the UPI ID.'),
+          content: Text(
+            'Failed to launch ${app.appName} automatically. Please open it manually and paste the UPI ID.',
+          ),
           duration: const Duration(seconds: 4),
           behavior: SnackBarBehavior.floating,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(12),
+          ),
         ),
       );
     }
@@ -223,7 +184,8 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
   Future<void> _shareQrCode() async {
     setState(() => _sharingQr = true);
     try {
-      final String upiUri = 'upi://pay'
+      final String upiUri =
+          'upi://pay'
           '?pa=${widget.upiId}'
           '&pn=${Uri.encodeComponent(widget.payeeName)}'
           '&am=${widget.amount.toStringAsFixed(2)}'
@@ -254,7 +216,8 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
       final file = await File('${tempDir.path}/upi_payment_qr.png').create();
       await file.writeAsBytes(pngBytes);
 
-      final String message = '💸 Split Expenses Payment Request\n'
+      final String message =
+          '💸 Split Expenses Payment Request\n'
           '---------------------------------\n'
           'Payee: ${widget.payeeName}\n'
           'Amount: ₹${widget.amount.toStringAsFixed(2)}\n'
@@ -262,10 +225,7 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
           'Direct Payment Link:\n'
           '$upiUri';
 
-      await Share.shareXFiles(
-        [XFile(file.path)],
-        text: message,
-      );
+      await Share.shareXFiles([XFile(file.path)], text: message);
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -273,7 +233,9 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
             content: Text('Failed to share QR Code: $e'),
             backgroundColor: Colors.red,
             behavior: SnackBarBehavior.floating,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
           ),
         );
       }
@@ -388,17 +350,19 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
             physics: const BouncingScrollPhysics(),
             child: Row(
               children: [
-                ..._installedApps.map((app) => Padding(
-                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                      child: _AppTile(
-                        app: app,
-                        onTap: () {
-                          if (app.upiApplication != null) {
-                            _handlePayment(context, app.upiApplication!);
-                          }
-                        },
-                      ),
-                    )),
+                ..._installedApps.map(
+                  (app) => Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: _AppTile(
+                      app: app,
+                      onTap: () {
+                        if (app.upiApplication != null) {
+                          _handlePayment(context, app.upiApplication!);
+                        }
+                      },
+                    ),
+                  ),
+                ),
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8.0),
                   child: Container(
@@ -443,7 +407,11 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.warning_amber_rounded, color: Colors.redAccent, size: 16),
+              const Icon(
+                Icons.warning_amber_rounded,
+                color: Colors.redAccent,
+                size: 16,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -464,7 +432,8 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
   }
 
   Widget _buildQrCodeTab() {
-    final String upiUri = 'upi://pay'
+    final String upiUri =
+        'upi://pay'
         '?pa=${widget.upiId}'
         '&pn=${Uri.encodeComponent(widget.payeeName)}'
         '&am=${widget.amount.toStringAsFixed(2)}'
@@ -517,7 +486,10 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
                     ? const SizedBox(
                         width: 16,
                         height: 16,
-                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
                       )
                     : const Icon(Icons.share_rounded, size: 16),
                 label: Text(_sharingQr ? 'Preparing...' : 'Share QR Code'),
@@ -556,16 +528,19 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
           decoration: BoxDecoration(
             color: Theme.of(context).colorScheme.primary.withOpacity(0.06),
             borderRadius: BorderRadius.circular(16),
-            border: Border.all(color: Theme.of(context).colorScheme.primary.withOpacity(0.12)),
+            border: Border.all(
+              color: Theme.of(context).colorScheme.primary.withOpacity(0.12),
+            ),
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Row(
                 children: [
-                  Icon(Icons.camera_alt_outlined, 
-                    color: Theme.of(context).colorScheme.primary, 
-                    size: 16
+                  Icon(
+                    Icons.camera_alt_outlined,
+                    color: Theme.of(context).colorScheme.primary,
+                    size: 16,
                   ),
                   const SizedBox(width: 8),
                   Text(
@@ -579,10 +554,19 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
                 ],
               ),
               const SizedBox(height: 8),
-              _buildStepRow('1', 'Take a screenshot of this QR Code, or tap "Share QR Code" / "Send WhatsApp" above.'),
+              _buildStepRow(
+                '1',
+                'Take a screenshot of this QR Code, or tap "Share QR Code" / "Send WhatsApp" above.',
+              ),
               _buildStepRow('2', 'Open Google Pay, PhonePe, or Paytm.'),
-              _buildStepRow('3', 'Tap the Scan icon and select Gallery/Upload Photo.'),
-              _buildStepRow('4', 'Select the screenshot or saved QR to pay ₹${widget.amount.toStringAsFixed(2)} directly.'),
+              _buildStepRow(
+                '3',
+                'Tap the Scan icon and select Gallery/Upload Photo.',
+              ),
+              _buildStepRow(
+                '4',
+                'Select the screenshot or saved QR to pay ₹${widget.amount.toStringAsFixed(2)} directly.',
+              ),
             ],
           ),
         ),
@@ -692,7 +676,10 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
                     borderRadius: BorderRadius.circular(12),
                   ),
                   elevation: 0,
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
                 ),
               ),
             ],
@@ -725,17 +712,19 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
             physics: const BouncingScrollPhysics(),
             child: Row(
               children: _installedApps
-                  .map((app) => Padding(
-                        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                        child: _AppTile(
-                          app: app,
-                          onTap: () {
-                            if (app.upiApplication != null) {
-                              _handleDirectLaunch(app.upiApplication!);
-                            }
-                          },
-                        ),
-                      ))
+                  .map(
+                    (app) => Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                      child: _AppTile(
+                        app: app,
+                        onTap: () {
+                          if (app.upiApplication != null) {
+                            _handleDirectLaunch(app.upiApplication!);
+                          }
+                        },
+                      ),
+                    ),
+                  )
                   .toList(),
             ),
           ),
@@ -750,7 +739,11 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
           child: Row(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              const Icon(Icons.info_outline_rounded, color: Colors.orange, size: 16),
+              const Icon(
+                Icons.info_outline_rounded,
+                color: Colors.orange,
+                size: 16,
+              ),
               const SizedBox(width: 10),
               Expanded(
                 child: Text(
@@ -772,7 +765,9 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
   Widget build(BuildContext context) {
     return Container(
       padding: EdgeInsets.fromLTRB(
-        20, 16, 20,
+        20,
+        16,
+        20,
         MediaQuery.of(context).viewInsets.bottom + 32,
       ),
       decoration: BoxDecoration(
@@ -786,7 +781,7 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
           ),
         ],
       ),
-      child: Expanded(
+      child: SingleChildScrollView(
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -802,7 +797,7 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
                 ),
               ),
             ),
-        
+
             // ── Amount & Payee Name ────────────────────────────
             Text(
               '₹${widget.amount.toStringAsFixed(2)}',
@@ -823,11 +818,11 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
               ),
             ),
             const SizedBox(height: 20),
-        
+
             // ── Segmented Tab Header ───────────────────────────
             _buildTabHeader(),
             const SizedBox(height: 12),
-        
+
             // ── Tab Body Content ───────────────────────────────
             AnimatedSwitcher(
               duration: const Duration(milliseconds: 250),
@@ -839,15 +834,15 @@ class _UpiPaymentSheetState extends State<_UpiPaymentSheet> {
                 child: _selectedTabIndex == 0
                     ? _buildDirectPayTab()
                     : _selectedTabIndex == 1
-                        ? _buildQrCodeTab()
-                        : _buildManualPayTab(),
+                    ? _buildQrCodeTab()
+                    : _buildManualPayTab(),
               ),
             ),
-        
+
             const SizedBox(height: 20),
             const Divider(height: 1),
             const SizedBox(height: 12),
-        
+
             // ── Cancel/Close button ────────────────────────────
             SizedBox(
               width: double.infinity,
@@ -902,11 +897,7 @@ class _AppTile extends StatelessWidget {
             child: ClipRRect(
               borderRadius: BorderRadius.circular(16),
               child: app.iconImage != null
-                  ? SizedBox(
-                      width: 60,
-                      height: 60,
-                      child: app.iconImage,
-                    )
+                  ? SizedBox(width: 60, height: 60, child: app.iconImage)
                   : Center(
                       child: Text(
                         app.label,
@@ -982,11 +973,7 @@ class _ShareTile extends StatelessWidget {
                         color: Colors.white,
                       ),
                     )
-                  : Icon(
-                      icon,
-                      color: Colors.white,
-                      size: 24,
-                    ),
+                  : Icon(icon, color: Colors.white, size: 24),
             ),
           ),
           const SizedBox(height: 8),
