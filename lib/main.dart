@@ -9,6 +9,7 @@ import 'services/notification_service.dart';
 import 'storage/storage_service.dart';
 import 'screens/group_list_screen.dart';
 import 'screens/login_screen.dart';
+import 'screens/splash_screen.dart';
 import 'screens/verify_email_screen.dart';
 import 'theme/app_theme.dart';
 
@@ -69,7 +70,7 @@ class MyApp extends StatelessWidget {
       debugShowCheckedModeBanner: false,
       theme: AppTheme.lightTheme,
       themeMode: ThemeMode.light,
-      home: AuthWrapper(
+      home: SplashScreen(
         firebaseReady: firebaseReady,
         firebaseError: firebaseError,
       ),

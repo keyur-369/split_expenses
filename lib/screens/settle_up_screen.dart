@@ -89,7 +89,6 @@ class SettleUpScreen extends StatelessWidget {
                       ),
                     ),
                     child: Row(
-                      mainAxisSize: MainAxisSize.min,
                       children: [
                         Icon(
                           Icons.admin_panel_settings_rounded,
@@ -97,12 +96,14 @@ class SettleUpScreen extends StatelessWidget {
                           color: Theme.of(context).colorScheme.primary,
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          'You are the group owner — you can mark payments',
-                          style: GoogleFonts.outfit(
-                            fontSize: 13,
-                            color: Theme.of(context).colorScheme.primary,
-                            fontWeight: FontWeight.w600,
+                        Expanded(
+                          child: Text(
+                            'You are the group owner — you can mark payments',
+                            style: GoogleFonts.outfit(
+                              fontSize: 13,
+                              color: Theme.of(context).colorScheme.primary,
+                              fontWeight: FontWeight.w600,
+                            ),
                           ),
                         ),
                       ],
@@ -364,14 +365,19 @@ class _SummaryHeaderCard extends StatelessWidget {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(
-                group.name,
-                style: GoogleFonts.outfit(
-                  color: Colors.white70,
-                  fontSize: 14,
-                  fontWeight: FontWeight.w500,
+              Expanded(
+                child: Text(
+                  group.name,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: GoogleFonts.outfit(
+                    color: Colors.white70,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w500,
+                  ),
                 ),
               ),
+              const SizedBox(width: 8),
               if (group.ownerId != null &&
                   FirebaseAuth.instance.currentUser?.uid != group.ownerId)
                 Builder(builder: (context) {
@@ -456,6 +462,7 @@ class _SummaryHeaderCard extends StatelessWidget {
                         border: Border.all(color: Colors.white30),
                       ),
                       child: Row(
+                        mainAxisSize: MainAxisSize.min,
                         children: [
                           const Icon(Icons.account_balance_wallet,
                               color: Colors.white, size: 14),
@@ -483,18 +490,18 @@ class _SummaryHeaderCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 12),
-          Row(
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
             children: [
               _StatChip(
                 label: '${group.expenses.length} expenses',
                 icon: Icons.receipt_outlined,
               ),
-              const SizedBox(width: 10),
               _StatChip(
                 label: '$settled settled',
                 icon: Icons.check_circle_outline,
               ),
-              const SizedBox(width: 10),
               _StatChip(
                 label: '${group.participants.length} members',
                 icon: Icons.people_outline,
@@ -641,14 +648,17 @@ class _SettlementCardState extends State<_SettlementCard> {
                 children: [
                   Row(
                     children: [
-                      Text(
-                        s.debtorName,
-                        style: GoogleFonts.outfit(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                          decoration:
-                              widget.isPaid ? TextDecoration.none : null,
-                          color: widget.isPaid ? Colors.green.shade700 : null,
+                      Flexible(
+                        child: Text(
+                          s.debtorName,
+                          overflow: TextOverflow.ellipsis,
+                          style: GoogleFonts.outfit(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 15,
+                            decoration:
+                                widget.isPaid ? TextDecoration.none : null,
+                            color: widget.isPaid ? Colors.green.shade700 : null,
+                          ),
                         ),
                       ),
                       if (widget.isPaid) ...[
@@ -677,11 +687,14 @@ class _SettlementCardState extends State<_SettlementCard> {
                   ),
                   Row(
                     children: [
-                      Text(
-                        'owes ${s.creditorName}',
-                        style: TextStyle(
-                          fontSize: 13,
-                          color: Colors.grey[600],
+                      Flexible(
+                        child: Text(
+                          'owes ${s.creditorName}',
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            fontSize: 13,
+                            color: Colors.grey[600],
+                          ),
                         ),
                       ),
                       if (s.creditorUpiId != null &&

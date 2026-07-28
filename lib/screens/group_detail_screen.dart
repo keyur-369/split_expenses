@@ -764,6 +764,54 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
     }
   }
 
+  Future<void> _shareGroupSummaryReport(BuildContext context, Group group) async {
+    final service = Provider.of<GroupService>(context, listen: false);
+    final settlements = service.getSettlements(group);
+
+    double totalAmount = 0;
+    for (final exp in group.expenses) {
+      totalAmount += exp.amount;
+    }
+
+    final StringBuffer sb = StringBuffer();
+    sb.writeln('📊 Group Summary: "${group.name}"');
+    sb.writeln('━━━━━━━━━━━━━━━━━━━━━━━━━━');
+    sb.writeln('💰 Total Expenses: ₹${totalAmount.toStringAsFixed(2)}');
+    sb.writeln('👥 Total Members: ${group.participants.length}');
+    sb.writeln('📅 Date: ${DateFormat.yMMMd().format(DateTime.now())}');
+    sb.writeln();
+
+    if (settlements.isEmpty) {
+      sb.writeln('🎉 Status: All settled up! No pending debts.');
+    } else {
+      sb.writeln('⚖️ Pending Settlements:');
+      for (final s in settlements) {
+        sb.writeln('  • $s');
+      }
+    }
+
+    sb.writeln();
+    sb.writeln('📝 Recent Expenses (${group.expenses.length}):');
+    for (final exp in group.expenses.take(10)) {
+      final payer = group.participants.firstWhere(
+        (p) => p.id == exp.payerId,
+        orElse: () => Participant(id: exp.payerId, name: 'Unknown'),
+      );
+      sb.writeln('  • ${exp.title}: ₹${exp.amount.toStringAsFixed(2)} (Paid by ${payer.name})');
+    }
+    if (group.expenses.length > 10) {
+      sb.writeln('  ... and ${group.expenses.length - 10} more expenses');
+    }
+
+    sb.writeln();
+    sb.writeln('Shared via Split Expenses App 🚀');
+
+    await Share.share(
+      sb.toString(),
+      subject: 'Group Summary Report - ${group.name}',
+    );
+  }
+
   void _showShareSplitSheet(
     BuildContext context,
     Group group,
@@ -1012,6 +1060,30 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                       onPressed: () => _showReminderSheet(context, group),
                     ),
                   ),
+                // 📤 Share Group Summary Report
+                Container(
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: BoxDecoration(
+                    color: Theme.of(context).cardTheme.color,
+                    shape: BoxShape.circle,
+                    border: Border.all(color: Colors.grey.withOpacity(0.1)),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
+                  child: IconButton(
+                    icon: const Icon(
+                      Icons.share_rounded,
+                      size: 20,
+                    ),
+                    tooltip: "Share Group Summary",
+                    onPressed: () => _shareGroupSummaryReport(context, group),
+                    color: Theme.of(context).iconTheme.color,
+                  ),
+                ),
                 Container(
                   margin: const EdgeInsets.only(right: 8),
                   decoration: BoxDecoration(
@@ -1296,12 +1368,15 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                   Row(
                     mainAxisAlignment: MainAxisAlignment.spaceBetween,
                     children: [
-                      const Text(
-                        "Total Spending",
-                        style: TextStyle(
-                          color: Colors.white70,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
+                      const Expanded(
+                        child: Text(
+                          "Total Spending",
+                          overflow: TextOverflow.ellipsis,
+                          style: TextStyle(
+                            color: Colors.white70,
+                            fontSize: 16,
+                            fontWeight: FontWeight.w500,
+                          ),
                         ),
                       ),
                       InkWell(
@@ -1689,11 +1764,14 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
                 ),
                 title: Row(
                   children: [
-                    Text(
-                      isMe ? '${person.name} (You)' : person.name,
-                      style: GoogleFonts.outfit(
-                        fontWeight: FontWeight.w600,
-                        fontSize: 16,
+                    Flexible(
+                      child: Text(
+                        isMe ? '${person.name} (You)' : person.name,
+                        overflow: TextOverflow.ellipsis,
+                        style: GoogleFonts.outfit(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 16,
+                        ),
                       ),
                     ),
                     if (isOwner) ...[

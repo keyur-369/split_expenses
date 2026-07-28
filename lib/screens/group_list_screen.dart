@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import '../services/group_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
@@ -19,6 +20,8 @@ class GroupListScreen extends StatefulWidget {
 class _GroupListScreenState extends State<GroupListScreen>
     with SingleTickerProviderStateMixin {
   late AnimationController _controller;
+  String _searchQuery = '';
+  final TextEditingController _searchController = TextEditingController();
 
   // ── Design tokens (same as LoginScreen / RegisterScreen) ──
   static const Color _primaryColor = Color(0xFF1A73E8);
@@ -56,6 +59,7 @@ class _GroupListScreenState extends State<GroupListScreen>
   @override
   void dispose() {
     _controller.dispose();
+    _searchController.dispose();
     super.dispose();
   }
 
@@ -393,7 +397,16 @@ class _GroupListScreenState extends State<GroupListScreen>
           final sendingGroups = <Group>[];
           final neutralGroups = <Group>[];
 
-          for (final g in service.groups) {
+          final filteredGroups = service.groups.where((g) {
+            if (_searchQuery.trim().isEmpty) return true;
+            final query = _searchQuery.trim().toLowerCase();
+            final nameMatch = g.name.toLowerCase().contains(query);
+            final memberMatch = g.participants.any((p) => p.name.toLowerCase().contains(query));
+            final expenseMatch = g.expenses.any((e) => e.title.toLowerCase().contains(query));
+            return nameMatch || memberMatch || expenseMatch;
+          }).toList();
+
+          for (final g in filteredGroups) {
             final bal = _getUserBalance(g, uid, service);
             if (bal > 0.01) {
               receivingGroups.add(g);
@@ -429,6 +442,18 @@ class _GroupListScreenState extends State<GroupListScreen>
                       totalReceive, totalOwe, service.groups.length),
                 ),
 
+              // ── Quick Actions Bar ──
+              if (!service.isLoading && service.groups.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildQuickActionsBar(context),
+                ),
+
+              // ── Search Bar ──
+              if (!service.isLoading && service.groups.isNotEmpty)
+                SliverToBoxAdapter(
+                  child: _buildSearchBar(),
+                ),
+
               // ── Loading ──
               if (service.isLoading)
                 const SliverFillRemaining(
@@ -441,6 +466,33 @@ class _GroupListScreenState extends State<GroupListScreen>
               else if (service.groups.isEmpty)
                 SliverFillRemaining(
                   child: _buildEmptyState(context),
+                )
+
+              // ── Search No Results ──
+              else if (filteredGroups.isEmpty && _searchQuery.isNotEmpty)
+                SliverFillRemaining(
+                  child: Center(
+                    child: Padding(
+                      padding: const EdgeInsets.all(24.0),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          const Icon(Icons.search_off_rounded, size: 54, color: _textMid),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No matching results',
+                            style: GoogleFonts.dmSerifDisplay(fontSize: 20, color: _textDark),
+                          ),
+                          const SizedBox(height: 6),
+                          Text(
+                            'No groups or expenses match "$_searchQuery"',
+                            style: GoogleFonts.inter(fontSize: 13, color: _textMid),
+                            textAlign: TextAlign.center,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
                 )
 
               // ── Group Lists ──
@@ -502,6 +554,196 @@ class _GroupListScreenState extends State<GroupListScreen>
   }
 
   // ─────────────────────────────────────────────
+  //  Notification Center Sheet
+  // ─────────────────────────────────────────────
+  void _showNotificationCenter(BuildContext context) {
+    final uid = Provider.of<AuthService>(context, listen: false).currentUser?.uid;
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      isScrollControlled: true,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (ctx) => DraggableScrollableSheet(
+        initialChildSize: 0.65,
+        minChildSize: 0.4,
+        maxChildSize: 0.9,
+        expand: false,
+        builder: (context, scrollController) => Column(
+          children: [
+            Container(
+              margin: const EdgeInsets.only(top: 12, bottom: 8),
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
+              child: Row(
+                children: [
+                  Container(
+                    padding: const EdgeInsets.all(8),
+                    decoration: BoxDecoration(
+                      color: _primaryColor.withOpacity(0.1),
+                      borderRadius: BorderRadius.circular(10),
+                    ),
+                    child: const Icon(Icons.notifications_rounded, color: _primaryColor, size: 20),
+                  ),
+                  const SizedBox(width: 12),
+                  Text(
+                    'Notifications',
+                    style: GoogleFonts.dmSerifDisplay(fontSize: 22, color: _textDark),
+                  ),
+                ],
+              ),
+            ),
+            const Divider(),
+            Expanded(
+              child: uid == null
+                  ? Center(child: Text('Sign in to view notifications', style: GoogleFonts.inter(color: _textMid)))
+                  : StreamBuilder<QuerySnapshot>(
+                      stream: FirebaseFirestore.instance
+                          .collection('users')
+                          .doc(uid)
+                          .collection('notifications')
+                          .orderBy('createdAt', descending: true)
+                          .limit(30)
+                          .snapshots(),
+                      builder: (context, snapshot) {
+                        if (snapshot.connectionState == ConnectionState.waiting) {
+                          return const Center(child: CircularProgressIndicator(color: _primaryColor));
+                        }
+                        final docs = snapshot.data?.docs ?? [];
+                        if (docs.isEmpty) {
+                          return Center(
+                            child: Column(
+                              mainAxisSize: MainAxisSize.min,
+                              children: [
+                                const Icon(Icons.notifications_off_outlined, size: 48, color: Colors.grey),
+                                const SizedBox(height: 12),
+                                Text('No notifications yet', style: GoogleFonts.inter(fontSize: 15, fontWeight: FontWeight.w600, color: _textDark)),
+                                const SizedBox(height: 4),
+                                Text('Updates for expenses and members will appear here.', style: GoogleFonts.inter(fontSize: 12.5, color: _textMid)),
+                              ],
+                            ),
+                          );
+                        }
+                        return ListView.separated(
+                          controller: scrollController,
+                          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                          itemCount: docs.length,
+                          separatorBuilder: (_, __) => const Divider(height: 1),
+                          itemBuilder: (context, index) {
+                            final data = docs[index].data() as Map<String, dynamic>;
+                            final title = data['title'] ?? 'Notification';
+                            final body = data['body'] ?? '';
+                            final type = data['type'] ?? '';
+                            final ts = (data['createdAt'] as Timestamp?)?.toDate();
+                            final dateStr = ts != null ? DateFormat('MMM d, h:mm a').format(ts) : '';
+
+                            IconData iconData = Icons.notifications_rounded;
+                            Color iconColor = _primaryColor;
+
+                            if (type == 'expense_added') {
+                              iconData = Icons.receipt_long_rounded;
+                              iconColor = const Color(0xFFFF6D00);
+                            } else if (type == 'member_added') {
+                              iconData = Icons.group_add_rounded;
+                              iconColor = const Color(0xFF0288D1);
+                            } else if (type == 'payment_confirmed') {
+                              iconData = Icons.check_circle_rounded;
+                              iconColor = const Color(0xFF00897B);
+                            } else if (type == 'payment_reminder') {
+                              iconData = Icons.alarm_rounded;
+                              iconColor = const Color(0xFFE53935);
+                            }
+
+                            return ListTile(
+                              contentPadding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                              leading: Container(
+                                padding: const EdgeInsets.all(10),
+                                decoration: BoxDecoration(
+                                  color: iconColor.withOpacity(0.12),
+                                  shape: BoxShape.circle,
+                                ),
+                                child: Icon(iconData, color: iconColor, size: 20),
+                              ),
+                              title: Text(title, style: GoogleFonts.inter(fontSize: 14, fontWeight: FontWeight.w600, color: _textDark)),
+                              subtitle: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const SizedBox(height: 2),
+                                  Text(body, style: GoogleFonts.inter(fontSize: 12.5, color: _textMid)),
+                                  if (dateStr.isNotEmpty) ...[
+                                    const SizedBox(height: 4),
+                                    Text(dateStr, style: GoogleFonts.inter(fontSize: 11, color: Colors.grey[500])),
+                                  ],
+                                ],
+                              ),
+                            );
+                          },
+                        );
+                      },
+                    ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  //  Search Bar
+  // ─────────────────────────────────────────────
+  Widget _buildSearchBar() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 8, 16, 12),
+      child: Container(
+        decoration: BoxDecoration(
+          color: _cardColor,
+          borderRadius: BorderRadius.circular(16),
+          border: Border.all(
+            color: _searchQuery.isNotEmpty ? _primaryColor : _borderDefault,
+            width: _searchQuery.isNotEmpty ? 1.6 : 1.2,
+          ),
+          boxShadow: [
+            BoxShadow(
+              color: const Color(0xFF1A73E8).withOpacity(0.05),
+              blurRadius: 12,
+              offset: const Offset(0, 4),
+            ),
+          ],
+        ),
+        child: TextField(
+          controller: _searchController,
+          onChanged: (val) => setState(() => _searchQuery = val),
+          style: GoogleFonts.inter(fontSize: 14.5, color: _textDark),
+          decoration: InputDecoration(
+            hintText: 'Search groups, expenses, or members…',
+            hintStyle: GoogleFonts.inter(fontSize: 13.5, color: const Color(0xFFB0BAD0)),
+            prefixIcon: const Icon(Icons.search_rounded, size: 20, color: _primaryColor),
+            suffixIcon: _searchQuery.isNotEmpty
+                ? IconButton(
+                    icon: const Icon(Icons.clear_rounded, size: 18, color: _textMid),
+                    onPressed: () {
+                      _searchController.clear();
+                      setState(() => _searchQuery = '');
+                    },
+                  )
+                : null,
+            border: InputBorder.none,
+            contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 13),
+          ),
+        ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────
   //  App Bar
   // ─────────────────────────────────────────────
   Widget _buildAppBar(BuildContext context) {
@@ -525,6 +767,22 @@ class _GroupListScreenState extends State<GroupListScreen>
         background: Container(color: _bgColor),
       ),
       actions: [
+        // Notification Center Bell
+        GestureDetector(
+          onTap: () => _showNotificationCenter(context),
+          child: Container(
+            margin: const EdgeInsets.only(right: 6),
+            width: 38,
+            height: 38,
+            decoration: BoxDecoration(
+              color: _subtleGray,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(color: _borderDefault),
+            ),
+            child: const Icon(Icons.notifications_none_rounded,
+                size: 20, color: _textMid),
+          ),
+        ),
         // Profile
         GestureDetector(
           onTap: () => Navigator.push(
@@ -682,6 +940,68 @@ class _GroupListScreenState extends State<GroupListScreen>
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // ─────────────────────────────────────────────
+  //  Quick Actions Bar Widget
+  // ─────────────────────────────────────────────
+  Widget _buildQuickActionsBar(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(16, 6, 16, 4),
+      child: Row(
+        children: [
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _showAddGroupDialog(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: _primaryColor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: _primaryColor.withOpacity(0.2)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.group_add_rounded, size: 18, color: _primaryColor),
+                    const SizedBox(width: 6),
+                    Text(
+                      'New Group',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _primaryColor),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: GestureDetector(
+              onTap: () => _showNotificationCenter(context),
+              child: Container(
+                padding: const EdgeInsets.symmetric(vertical: 12),
+                decoration: BoxDecoration(
+                  color: const Color(0xFFFF6D00).withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(color: const Color(0xFFFF6D00).withOpacity(0.2)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    const Icon(Icons.notifications_active_rounded, size: 18, color: Color(0xFFFF6D00)),
+                    const SizedBox(width: 6),
+                    Text(
+                      'Activity',
+                      style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: const Color(0xFFFF6D00)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
