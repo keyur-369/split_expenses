@@ -22,6 +22,12 @@ class Expense {
   @HiveField(5)
   final DateTime date;
 
+  @HiveField(6)
+  final String category;
+
+  @HiveField(7)
+  final String? currencyCode;
+
   Expense({
     required this.id,
     required this.title,
@@ -29,5 +35,7 @@ class Expense {
     required this.payerId,
     required this.involvedParticipantIds,
     required this.date,
+    this.category = 'General',
+    this.currencyCode,
   });
 }

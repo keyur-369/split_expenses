@@ -147,6 +147,8 @@ class GroupService extends ChangeNotifier {
                       date:
                           (expData['createdAt'] as Timestamp?)?.toDate() ??
                           DateTime.now(),
+                      category: expData['category'] ?? 'General',
+                      currencyCode: expData['currencyCode'],
                     );
                   }).toList();
 
@@ -165,6 +167,8 @@ class GroupService extends ChangeNotifier {
                     createdAt:
                         (data['createdAt'] as Timestamp?)?.toDate() ??
                         DateTime.now(),
+                    budgetLimit: (data['budgetLimit'] as num?)?.toDouble(),
+                    currencyCode: data['currencyCode'] ?? 'INR',
                     ownerId: ownerId,
                     paidSettlementKeys: paidKeys,
                     paidSettlementNotes: paidNotes,
@@ -275,7 +279,11 @@ class GroupService extends ChangeNotifier {
     }
   }
 
-  Future<void> createGroup(String name) async {
+  Future<void> createGroup(
+    String name, {
+    double? budgetLimit,
+    String currencyCode = 'INR',
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
 
     final newGroup = Group(
@@ -284,6 +292,8 @@ class GroupService extends ChangeNotifier {
       participants: [],
       expenses: [],
       createdAt: DateTime.now(),
+      budgetLimit: budgetLimit,
+      currencyCode: currencyCode,
       ownerId: user?.uid,
     );
 
@@ -304,6 +314,42 @@ class GroupService extends ChangeNotifier {
         ownerId: user.uid,
         createdAt: newGroup.createdAt,
         memberIds: [user.uid],
+        budgetLimit: budgetLimit,
+        currencyCode: currencyCode,
+      );
+    }
+  }
+
+  Future<void> updateGroupBudgetAndCurrency(
+    String groupId, {
+    double? budgetLimit,
+    required String currencyCode,
+  }) async {
+    final index = _groups.indexWhere((g) => g.id == groupId);
+    if (index != -1) {
+      final group = _groups[index];
+      final updated = Group(
+        id: group.id,
+        name: group.name,
+        participants: group.participants,
+        expenses: group.expenses,
+        createdAt: group.createdAt,
+        budgetLimit: budgetLimit,
+        currencyCode: currencyCode,
+        ownerId: group.ownerId,
+        paidSettlementKeys: group.paidSettlementKeys,
+        paidSettlementNotes: group.paidSettlementNotes,
+      );
+      _groups[index] = updated;
+      await _storageService.addGroup(updated);
+      notifyListeners();
+    }
+
+    if (FirebaseAuth.instance.currentUser != null) {
+      await _firestoreService.updateGroupBudgetAndCurrency(
+        groupId: groupId,
+        budgetLimit: budgetLimit,
+        currencyCode: currencyCode,
       );
     }
   }
@@ -605,8 +651,10 @@ class GroupService extends ChangeNotifier {
     String title,
     double amount,
     String payerId,
-    List<String> involvedIds,
-  ) async {
+    List<String> involvedIds, {
+    String category = 'General',
+    String? currencyCode,
+  }) async {
     final user = FirebaseAuth.instance.currentUser;
     final now = DateTime.now();
 
@@ -617,6 +665,8 @@ class GroupService extends ChangeNotifier {
       payerId: payerId,
       involvedParticipantIds: involvedIds,
       date: now,
+      category: category,
+      currencyCode: currencyCode ?? group.currencyCode,
     );
     group.expenses.add(newExpense);
     await group.save();
@@ -654,6 +704,8 @@ class GroupService extends ChangeNotifier {
         splitWith: splitWithUserIds, // Use userIds instead of participant IDs
         groupId: group.id,
         createdAt: now,
+        category: category,
+        currencyCode: currencyCode ?? group.currencyCode,
       );
 
       // Send notification to all split members (except the payer)

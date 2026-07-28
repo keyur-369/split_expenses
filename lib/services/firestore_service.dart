@@ -97,13 +97,32 @@ class FirestoreService {
     required String ownerId,
     required DateTime createdAt,
     required List<String> memberIds,
+    double? budgetLimit,
+    String? currencyCode,
   }) async {
-    await _db.collection('groups').doc(id).set({
+    final data = <String, dynamic>{
       'name': name,
       'ownerId': ownerId,
       'members': memberIds,
       'createdAt': createdAt.toUtc(),
-    }, SetOptions(merge: true));
+      'currencyCode': currencyCode ?? 'INR',
+    };
+    if (budgetLimit != null) {
+      data['budgetLimit'] = budgetLimit;
+    }
+    await _db.collection('groups').doc(id).set(data, SetOptions(merge: true));
+  }
+
+  Future<void> updateGroupBudgetAndCurrency({
+    required String groupId,
+    required double? budgetLimit,
+    required String currencyCode,
+  }) async {
+    final data = <String, dynamic>{
+      'currencyCode': currencyCode,
+      'budgetLimit': budgetLimit,
+    };
+    await _db.collection('groups').doc(groupId).update(data);
   }
 
   Future<void> deleteGroup(String groupId) async {
@@ -224,6 +243,8 @@ class FirestoreService {
     required List<String> splitWith,
     required String groupId,
     required DateTime createdAt,
+    String? category,
+    String? currencyCode,
   }) async {
     await _db.collection('expenses').doc(id).set({
       'title': title,
@@ -232,6 +253,8 @@ class FirestoreService {
       'splitWith': splitWith,
       'groupId': groupId,
       'createdAt': createdAt.toUtc(),
+      'category': category ?? 'General',
+      if (currencyCode != null) 'currencyCode': currencyCode,
     });
   }
 

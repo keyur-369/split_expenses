@@ -7,6 +7,9 @@ import '../services/group_service.dart';
 import '../services/auth_service.dart';
 import '../services/notification_service.dart';
 import '../models/group.dart';
+import '../utils/currency_helper.dart';
+import '../widgets/skeleton_loading.dart';
+import 'analytics_screen.dart';
 import 'group_detail_screen.dart';
 import 'profile_screen.dart';
 
@@ -81,145 +84,251 @@ class _GroupListScreenState extends State<GroupListScreen>
   //  Dialogs
   // ─────────────────────────────────────────────
   void _showAddGroupDialog(BuildContext context) {
-    final ctrl = TextEditingController();
+    final nameCtrl = TextEditingController();
+    final budgetCtrl = TextEditingController();
+    String selectedCurrency = 'INR';
+
     showDialog(
       context: context,
-      builder: (ctx) => Dialog(
-        backgroundColor: _cardColor,
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-        child: Padding(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              // Header
-              Row(
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => Dialog(
+          backgroundColor: _cardColor,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: SingleChildScrollView(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      gradient: const LinearGradient(
-                        colors: [_primaryColor, _accentColor],
-                        begin: Alignment.topLeft,
-                        end: Alignment.bottomRight,
-                      ),
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    child: const Icon(Icons.group_add_rounded,
-                        color: Colors.white, size: 20),
-                  ),
-                  const SizedBox(width: 12),
-                  Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
+                  // Header
+                  Row(
                     children: [
-                      Text(
-                        'New Group',
-                        style: GoogleFonts.dmSerifDisplay(
-                          fontSize: 20,
-                          color: _textDark,
+                      Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [_primaryColor, _accentColor],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: const Icon(Icons.group_add_rounded,
+                            color: Colors.white, size: 20),
+                      ),
+                      const SizedBox(width: 12),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Text(
+                            'New Group',
+                            style: GoogleFonts.dmSerifDisplay(
+                              fontSize: 20,
+                              color: _textDark,
+                            ),
+                          ),
+                          Text(
+                            'Configure group & budget cap',
+                            style: GoogleFonts.inter(
+                                fontSize: 12, color: _textMid),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 20),
+
+                  // Group Name Field
+                  Text(
+                    'Group Name',
+                    style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: _textDark),
+                  ),
+                  const SizedBox(height: 6),
+                  Container(
+                    decoration: BoxDecoration(
+                      color: _subtleGray,
+                      borderRadius: BorderRadius.circular(12),
+                      border: Border.all(color: _borderDefault, width: 1.2),
+                    ),
+                    child: TextField(
+                      controller: nameCtrl,
+                      textCapitalization: TextCapitalization.sentences,
+                      style: GoogleFonts.inter(fontSize: 15, color: _textDark),
+                      decoration: InputDecoration(
+                        hintText: 'e.g., Summer Trip, Flatmates…',
+                        hintStyle: GoogleFonts.inter(
+                            fontSize: 14, color: const Color(0xFFB0BAD0)),
+                        prefixIcon: const Icon(Icons.group_outlined,
+                            size: 20, color: Color(0xFFB0BAD0)),
+                        border: InputBorder.none,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16, vertical: 14),
+                      ),
+                    ),
+                  ),
+
+                  const SizedBox(height: 16),
+
+                  // Currency & Budget Row
+                  Row(
+                    children: [
+                      // Currency Selector
+                      Expanded(
+                        flex: 4,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Currency',
+                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: _textDark),
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              padding: const EdgeInsets.symmetric(horizontal: 12),
+                              decoration: BoxDecoration(
+                                color: _subtleGray,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: _borderDefault, width: 1.2),
+                              ),
+                              child: DropdownButtonHideUnderline(
+                                child: DropdownButton<String>(
+                                  value: selectedCurrency,
+                                  isExpanded: true,
+                                  icon: const Icon(Icons.keyboard_arrow_down_rounded, color: _textMid),
+                                  style: GoogleFonts.inter(fontSize: 14, color: _textDark, fontWeight: FontWeight.w600),
+                                  items: CurrencyHelper.currencies.map((c) {
+                                    return DropdownMenuItem<String>(
+                                      value: c.code,
+                                      child: Text('${c.flag} ${c.symbol}'),
+                                    );
+                                  }).toList(),
+                                  onChanged: (val) {
+                                    if (val != null) {
+                                      setDialogState(() => selectedCurrency = val);
+                                    }
+                                  },
+                                ),
+                              ),
+                            ),
+                          ],
                         ),
                       ),
-                      Text(
-                        'Give your group a name',
-                        style: GoogleFonts.inter(
-                            fontSize: 12, color: _textMid),
+                      const SizedBox(width: 12),
+
+                      // Optional Budget Cap
+                      Expanded(
+                        flex: 5,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              'Budget Cap (Opt)',
+                              style: GoogleFonts.inter(fontSize: 12, fontWeight: FontWeight.bold, color: _textDark),
+                            ),
+                            const SizedBox(height: 6),
+                            Container(
+                              decoration: BoxDecoration(
+                                color: _subtleGray,
+                                borderRadius: BorderRadius.circular(12),
+                                border: Border.all(color: _borderDefault, width: 1.2),
+                              ),
+                              child: TextField(
+                                controller: budgetCtrl,
+                                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                                style: GoogleFonts.inter(fontSize: 14, color: _textDark),
+                                decoration: InputDecoration(
+                                  hintText: 'e.g. 20000',
+                                  hintStyle: GoogleFonts.inter(
+                                      fontSize: 13, color: const Color(0xFFB0BAD0)),
+                                  border: InputBorder.none,
+                                  contentPadding: const EdgeInsets.symmetric(
+                                      horizontal: 12, vertical: 12),
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+
+                  const SizedBox(height: 24),
+                  // Buttons
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () => Navigator.of(ctx).pop(),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: _textMid,
+                            side: const BorderSide(color: _borderDefault),
+                            shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12)),
+                            padding: const EdgeInsets.symmetric(vertical: 14),
+                          ),
+                          child: Text('Cancel',
+                              style: GoogleFonts.inter(
+                                  fontWeight: FontWeight.w500)),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Container(
+                          decoration: BoxDecoration(
+                            gradient: const LinearGradient(
+                              colors: [_primaryColor, _accentColor],
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                            ),
+                            borderRadius: BorderRadius.circular(12),
+                            boxShadow: [
+                              BoxShadow(
+                                color: _primaryColor.withOpacity(0.30),
+                                blurRadius: 12,
+                                offset: const Offset(0, 4),
+                              ),
+                            ],
+                          ),
+                          child: ElevatedButton(
+                            onPressed: () {
+                              if (nameCtrl.text.trim().isNotEmpty) {
+                                final budget = double.tryParse(budgetCtrl.text.trim());
+                                Provider.of<GroupService>(context, listen: false).createGroup(
+                                  nameCtrl.text.trim(),
+                                  budgetLimit: budget,
+                                  currencyCode: selectedCurrency,
+                                );
+                                Navigator.of(ctx).pop();
+                              }
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.transparent,
+                              shadowColor: Colors.transparent,
+                              foregroundColor: Colors.white,
+                              shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12)),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                            ),
+                            child: Text('Create',
+                                style: GoogleFonts.inter(
+                                    fontWeight: FontWeight.w600)),
+                          ),
+                        ),
                       ),
                     ],
                   ),
                 ],
               ),
-              const SizedBox(height: 24),
-              // Field
-              Container(
-                decoration: BoxDecoration(
-                  color: _subtleGray,
-                  borderRadius: BorderRadius.circular(12),
-                  border: Border.all(color: _borderDefault, width: 1.2),
-                ),
-                child: TextField(
-                  controller: ctrl,
-                  textCapitalization: TextCapitalization.sentences,
-                  style: GoogleFonts.inter(fontSize: 15, color: _textDark),
-                  decoration: InputDecoration(
-                    hintText: 'e.g., Summer Trip, Flatmates…',
-                    hintStyle: GoogleFonts.inter(
-                        fontSize: 14, color: const Color(0xFFB0BAD0)),
-                    prefixIcon: const Icon(Icons.group_outlined,
-                        size: 20, color: Color(0xFFB0BAD0)),
-                    border: InputBorder.none,
-                    contentPadding: const EdgeInsets.symmetric(
-                        horizontal: 16, vertical: 14),
-                  ),
-                ),
-              ),
-              const SizedBox(height: 20),
-              // Buttons
-              Row(
-                children: [
-                  Expanded(
-                    child: OutlinedButton(
-                      onPressed: () => Navigator.of(ctx).pop(),
-                      style: OutlinedButton.styleFrom(
-                        foregroundColor: _textMid,
-                        side: const BorderSide(color: _borderDefault),
-                        shape: RoundedRectangleBorder(
-                            borderRadius: BorderRadius.circular(12)),
-                        padding: const EdgeInsets.symmetric(vertical: 14),
-                      ),
-                      child: Text('Cancel',
-                          style: GoogleFonts.inter(
-                              fontWeight: FontWeight.w500)),
-                    ),
-                  ),
-                  const SizedBox(width: 12),
-                  Expanded(
-                    child: Container(
-                      decoration: BoxDecoration(
-                        gradient: const LinearGradient(
-                          colors: [_primaryColor, _accentColor],
-                          begin: Alignment.topLeft,
-                          end: Alignment.bottomRight,
-                        ),
-                        borderRadius: BorderRadius.circular(12),
-                        boxShadow: [
-                          BoxShadow(
-                            color: _primaryColor.withOpacity(0.30),
-                            blurRadius: 12,
-                            offset: const Offset(0, 4),
-                          ),
-                        ],
-                      ),
-                      child: ElevatedButton(
-                        onPressed: () {
-                          if (ctrl.text.trim().isNotEmpty) {
-                            Provider.of<GroupService>(context, listen: false)
-                                .createGroup(ctrl.text.trim());
-                            Navigator.of(ctx).pop();
-                          }
-                        },
-                        style: ElevatedButton.styleFrom(
-                          backgroundColor: Colors.transparent,
-                          shadowColor: Colors.transparent,
-                          foregroundColor: Colors.white,
-                          shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(12)),
-                          padding: const EdgeInsets.symmetric(vertical: 14),
-                        ),
-                        child: Text('Create',
-                            style: GoogleFonts.inter(
-                                fontWeight: FontWeight.w600)),
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-            ],
+            ),
           ),
         ),
       ),
-    ).then((_) => ctrl.dispose());
+    ).then((_) {
+      nameCtrl.dispose();
+      budgetCtrl.dispose();
+    });
   }
 
   void _showLogoutDialog(BuildContext context) {
@@ -457,9 +566,7 @@ class _GroupListScreenState extends State<GroupListScreen>
               // ── Loading ──
               if (service.isLoading)
                 const SliverFillRemaining(
-                  child: Center(
-                    child: CircularProgressIndicator(color: _primaryColor),
-                  ),
+                  child: GroupListScreenSkeleton(),
                 )
 
               // ── Empty State ──
@@ -954,7 +1061,14 @@ class _GroupListScreenState extends State<GroupListScreen>
         children: [
           Expanded(
             child: GestureDetector(
-              onTap: () => _showAddGroupDialog(context),
+              onTap: () {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => const AnalyticsScreen(),
+                  ),
+                );
+              },
               child: Container(
                 padding: const EdgeInsets.symmetric(vertical: 12),
                 decoration: BoxDecoration(
@@ -965,10 +1079,10 @@ class _GroupListScreenState extends State<GroupListScreen>
                 child: Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    const Icon(Icons.group_add_rounded, size: 18, color: _primaryColor),
+                    const Icon(Icons.pie_chart_rounded, size: 18, color: _primaryColor),
                     const SizedBox(width: 6),
                     Text(
-                      'New Group',
+                      'Analytics',
                       style: GoogleFonts.inter(fontSize: 13, fontWeight: FontWeight.w600, color: _primaryColor),
                     ),
                   ],
@@ -1308,8 +1422,8 @@ class _GroupListScreenState extends State<GroupListScreen>
                                 const SizedBox(width: 4),
                                 Text(
                                   isReceiving
-                                      ? 'You receive ₹${balance.toStringAsFixed(2)}'
-                                      : 'You owe ₹${(-balance).toStringAsFixed(2)}',
+                                      ? 'You receive ${CurrencyHelper.format(balance, currencyCode: group.currencyCode)}'
+                                      : 'You owe ${CurrencyHelper.format(-balance, currencyCode: group.currencyCode)}',
                                   style: GoogleFonts.inter(
                                     fontSize: 12,
                                     fontWeight: FontWeight.w600,

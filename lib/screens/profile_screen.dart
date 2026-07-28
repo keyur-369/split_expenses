@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../services/auth_service.dart';
 import '../services/firestore_service.dart';
+import '../widgets/skeleton_loading.dart';
 
 class ProfileScreen extends StatefulWidget {
   const ProfileScreen({super.key});
@@ -185,7 +186,7 @@ class _ProfileScreenState extends State<ProfileScreen>
       backgroundColor: _bgColor,
       appBar: _buildAppBar(),
       body: _isLoading
-          ? const Center(child: CircularProgressIndicator(color: _primaryColor))
+          ? const GenericScreenSkeleton(itemHeight: 80, itemCount: 4)
           : FadeTransition(
         opacity: _fadeAnim,
         child: SingleChildScrollView(

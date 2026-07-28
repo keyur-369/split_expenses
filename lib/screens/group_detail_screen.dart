@@ -19,9 +19,11 @@ import '../widgets/upi_payment_sheet.dart';
 import '../services/firestore_service.dart';
 import '../services/notification_service.dart';
 import 'add_expense_screen.dart';
+import 'analytics_screen.dart';
 import 'settle_up_screen.dart';
 import 'expense_detail_screen.dart';
 import 'profile_screen.dart';
+import '../utils/currency_helper.dart';
 
 class GroupDetailScreen extends StatefulWidget {
   final Group group;
@@ -1000,218 +1002,140 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           orElse: () => widget.group,
         );
 
+        final double totalSpent = group.expenses.fold(0.0, (sum, e) => sum + e.amount);
+
         return Scaffold(
-          appBar: PreferredSize(
-            preferredSize: const Size.fromHeight(
-              130,
-            ), // Height for Title + TabBar usually
-            child: AppBar(
-              toolbarHeight: 80, // Taller toolbar for title
-              title: Text(
-                group.name,
-                style: GoogleFonts.outfit(
-                  fontWeight: FontWeight.bold,
-                  fontSize: 28,
-                ),
+          appBar: AppBar(
+            elevation: 0,
+            scrolledUnderElevation: 0,
+            backgroundColor: Theme.of(context).scaffoldBackgroundColor,
+            leading: Container(
+              margin: const EdgeInsets.all(10),
+              decoration: BoxDecoration(
+                color: Theme.of(context).cardTheme.color,
+                shape: BoxShape.circle,
+                border: Border.all(color: Colors.grey.withOpacity(0.1)),
+                boxShadow: [
+                  BoxShadow(
+                    color: Colors.black.withOpacity(0.05),
+                    blurRadius: 10,
+                  ),
+                ],
               ),
-              centerTitle: false,
-              backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-              elevation: 0,
-              scrolledUnderElevation: 0,
-              leading: Container(
-                margin: const EdgeInsets.all(12),
+              child: IconButton(
+                icon: const Icon(Icons.arrow_back, size: 20),
+                onPressed: () => Navigator.pop(context),
+                color: Theme.of(context).iconTheme.color,
+                padding: EdgeInsets.zero,
+              ),
+            ),
+            title: Text(
+              group.name,
+              style: GoogleFonts.outfit(
+                fontWeight: FontWeight.bold,
+                fontSize: 24,
+                color: const Color(0xFF1C2B4A),
+              ),
+            ),
+            actions: [
+              Builder(
+                builder: (context) {
+                  final isOwner = FirebaseAuth.instance.currentUser?.uid == group.ownerId;
+                  return Container(
+                    margin: const EdgeInsets.only(right: 14),
+                    decoration: BoxDecoration(
+                      color: const Color(0xFFFFEBEE),
+                      shape: BoxShape.circle,
+                      border: Border.all(color: const Color(0xFFEF5350).withOpacity(0.2)),
+                    ),
+                    child: IconButton(
+                      icon: Icon(
+                        isOwner ? Icons.delete_outline_rounded : Icons.logout_rounded,
+                        color: const Color(0xFFE53935),
+                        size: 20,
+                      ),
+                      tooltip: isOwner ? 'Delete Group' : 'Exit Group',
+                      onPressed: () => isOwner
+                          ? _confirmDeleteGroup(context, group)
+                          : _confirmExitGroup(context, group),
+                    ),
+                  );
+                },
+              ),
+            ],
+          ),
+          body: Column(
+            children: [
+              _buildTotalSpendingHeroCard(context, group, totalSpent),
+              if (group.budgetLimit != null && group.budgetLimit! > 0)
+                _buildBudgetCard(group, totalSpent),
+              _buildGroupQuickActions(context, group),
+              const SizedBox(height: 6),
+              Container(
+                margin: const EdgeInsets.symmetric(horizontal: 16),
+                height: 44,
                 decoration: BoxDecoration(
-                  color: Theme.of(context).cardTheme.color,
-                  shape: BoxShape.circle,
-                  border: Border.all(color: Colors.grey.withOpacity(0.1)),
-                  boxShadow: [
-                    BoxShadow(
-                      color: Colors.black.withOpacity(0.05),
-                      blurRadius: 10,
+                  color: Colors.grey[200],
+                  borderRadius: BorderRadius.circular(22),
+                ),
+                child: TabBar(
+                  controller: _tabController,
+                  overlayColor: WidgetStateProperty.all(Colors.transparent),
+                  splashFactory: NoSplash.splashFactory,
+                  indicatorSize: TabBarIndicatorSize.tab,
+                  indicator: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(22),
+                    boxShadow: [
+                      BoxShadow(
+                        color: Colors.black.withOpacity(0.05),
+                        blurRadius: 4,
+                        offset: const Offset(0, 2),
+                      ),
+                    ],
+                  ),
+                  labelColor: Theme.of(context).primaryColor,
+                  labelStyle: const TextStyle(
+                    fontWeight: FontWeight.bold,
+                    fontSize: 13,
+                  ),
+                  unselectedLabelColor: Colors.grey[600],
+                  dividerColor: Colors.transparent,
+                  indicatorPadding: const EdgeInsets.all(4),
+                  tabs: const [
+                    Tab(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.receipt_outlined, size: 16),
+                          SizedBox(width: 8),
+                          Text("EXPENSES"),
+                        ],
+                      ),
+                    ),
+                    Tab(
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Icon(Icons.people_outline, size: 16),
+                          SizedBox(width: 8),
+                          Text("PEOPLE"),
+                        ],
+                      ),
                     ),
                   ],
                 ),
-                child: IconButton(
-                  icon: const Icon(Icons.arrow_back, size: 20),
-                  onPressed: () => Navigator.pop(context),
-                  color: Theme.of(context).iconTheme.color,
-                  padding: EdgeInsets.zero,
+              ),
+              const SizedBox(height: 6),
+              Expanded(
+                child: TabBarView(
+                  controller: _tabController,
+                  children: [
+                    _buildExpensesTab(service, group),
+                    _buildParticipantsTab(service, group),
+                  ],
                 ),
               ),
-              actions: [
-                // 🔔 Reminder bell — only for group owner
-                if (FirebaseAuth.instance.currentUser?.uid == group.ownerId)
-                  Container(
-                    margin: const EdgeInsets.only(right: 4),
-                    decoration: BoxDecoration(
-                      color: const Color(0xFF1A73E8).withOpacity(0.1),
-                      shape: BoxShape.circle,
-                      border: Border.all(
-                        color: const Color(0xFF1A73E8).withOpacity(0.2),
-                      ),
-                    ),
-                    child: IconButton(
-                      icon: const Icon(
-                        Icons.notifications_active_rounded,
-                        size: 20,
-                        color: Color(0xFF1A73E8),
-                      ),
-                      tooltip: 'Send Payment Reminder',
-                      onPressed: () => _showReminderSheet(context, group),
-                    ),
-                  ),
-                // 📤 Share Group Summary Report
-                Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardTheme.color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.grey.withOpacity(0.1)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.share_rounded,
-                      size: 20,
-                    ),
-                    tooltip: "Share Group Summary",
-                    onPressed: () => _shareGroupSummaryReport(context, group),
-                    color: Theme.of(context).iconTheme.color,
-                  ),
-                ),
-                Container(
-                  margin: const EdgeInsets.only(right: 8),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardTheme.color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.grey.withOpacity(0.1)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: const Icon(
-                      Icons.account_balance_wallet_outlined,
-                      size: 20,
-                    ),
-                    tooltip: "Balances",
-                    onPressed: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => SettleUpScreen(group: group),
-                        ),
-                      );
-                    },
-                    color: Theme.of(context).iconTheme.color,
-                  ),
-                ),
-                Container(
-                  margin: const EdgeInsets.only(right: 16),
-                  decoration: BoxDecoration(
-                    color: Theme.of(context).cardTheme.color,
-                    shape: BoxShape.circle,
-                    border: Border.all(color: Colors.grey.withOpacity(0.1)),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.05),
-                        blurRadius: 10,
-                      ),
-                    ],
-                  ),
-                  child: IconButton(
-                    icon: Icon(
-                      FirebaseAuth.instance.currentUser?.uid == group.ownerId
-                          ? Icons.delete_outline
-                          : Icons.logout_rounded,
-                      size: 20,
-                      color: Colors.redAccent,
-                    ),
-                    tooltip: FirebaseAuth.instance.currentUser?.uid == group.ownerId
-                        ? "Delete Group"
-                        : "Exit Group",
-                    onPressed: () => FirebaseAuth.instance.currentUser?.uid == group.ownerId
-                        ? _confirmDeleteGroup(context, group)
-                        : _confirmExitGroup(context, group),
-                  ),
-                ),
-              ],
-              bottom: PreferredSize(
-                preferredSize: const Size.fromHeight(50),
-                child: Container(
-                  margin: const EdgeInsets.symmetric(
-                    horizontal: 16,
-                    vertical: 0,
-                  ),
-                  height: 44,
-                  decoration: BoxDecoration(
-                    color: Colors.grey[200],
-                    borderRadius: BorderRadius.circular(22),
-                  ),
-                  child: TabBar(
-                    controller: _tabController,
-                    overlayColor: WidgetStateProperty.all(Colors.transparent),
-                    splashFactory: NoSplash.splashFactory,
-                    indicatorSize: TabBarIndicatorSize.tab,
-                    indicator: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(22),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.05),
-                          blurRadius: 4,
-                          offset: const Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    labelColor: Theme.of(context).primaryColor,
-                    labelStyle: const TextStyle(
-                      fontWeight: FontWeight.bold,
-                      fontSize: 13,
-                    ),
-                    unselectedLabelColor: Colors.grey[600],
-                    dividerColor: Colors.transparent,
-                    indicatorPadding: const EdgeInsets.all(4),
-                    tabs: const [
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.receipt_outlined, size: 16),
-                            SizedBox(width: 8),
-                            Text("EXPENSES"),
-                          ],
-                        ),
-                      ),
-                      Tab(
-                        child: Row(
-                          mainAxisAlignment: MainAxisAlignment.center,
-                          children: [
-                            Icon(Icons.people_outline, size: 16),
-                            SizedBox(width: 8),
-                            Text("PEOPLE"),
-                          ],
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
-          body: TabBarView(
-            controller: _tabController,
-            children: [
-              _buildExpensesTab(service, group),
-              _buildParticipantsTab(service, group),
             ],
           ),
           floatingActionButton: FloatingActionButton.extended(
@@ -1259,6 +1183,576 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
           ),
         );
       },
+    );
+  }
+
+  void _showEditBudgetAndCurrencyDialog(BuildContext context, Group group) {
+    final budgetCtrl = TextEditingController(
+      text: group.budgetLimit != null && group.budgetLimit! > 0
+          ? group.budgetLimit!.toStringAsFixed(0)
+          : '',
+    );
+    String selectedCurrency = group.currencyCode;
+
+    showDialog(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setDialogState) => AlertDialog(
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+          title: Text(
+            'Edit Currency & Budget',
+            style: GoogleFonts.outfit(fontWeight: FontWeight.bold),
+          ),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                'Group Currency',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF5A6A85),
+                ),
+              ),
+              const SizedBox(height: 6),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                decoration: BoxDecoration(
+                  color: Colors.grey[100],
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.grey[300]!),
+                ),
+                child: DropdownButtonHideUnderline(
+                  child: DropdownButton<String>(
+                    value: selectedCurrency,
+                    isExpanded: true,
+                    items: CurrencyHelper.currencies.map((c) {
+                      return DropdownMenuItem<String>(
+                        value: c.code,
+                        child: Text('${c.symbol}  ${c.name} (${c.code})'),
+                      );
+                    }).toList(),
+                    onChanged: (val) {
+                      if (val != null) {
+                        setDialogState(() => selectedCurrency = val);
+                      }
+                    },
+                  ),
+                ),
+              ),
+              const SizedBox(height: 16),
+              Text(
+                'Monthly Budget Cap (Optional)',
+                style: GoogleFonts.inter(
+                  fontSize: 13,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF5A6A85),
+                ),
+              ),
+              const SizedBox(height: 6),
+              TextField(
+                controller: budgetCtrl,
+                keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                decoration: InputDecoration(
+                  hintText: 'e.g. 15000',
+                  prefixText: '${CurrencyHelper.getSymbol(selectedCurrency)} ',
+                  filled: true,
+                  fillColor: Colors.grey[100],
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(12),
+                    borderSide: BorderSide(color: Colors.grey[300]!),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final double? limit = double.tryParse(budgetCtrl.text.trim());
+                final service = Provider.of<GroupService>(context, listen: false);
+                await service.updateGroupBudgetAndCurrency(
+                  group.id,
+                  budgetLimit: limit,
+                  currencyCode: selectedCurrency,
+                );
+                if (mounted) {
+                  Navigator.pop(ctx);
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Budget & currency updated!')),
+                  );
+                }
+              },
+              style: ElevatedButton.styleFrom(
+                backgroundColor: const Color(0xFF1A73E8),
+                foregroundColor: Colors.white,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+              ),
+              child: const Text('Save'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildBudgetCard(Group group, double total) {
+    if (group.budgetLimit == null || group.budgetLimit! <= 0) {
+      return const SizedBox.shrink();
+    }
+
+    final limit = group.budgetLimit!;
+    final pct = (total / limit).clamp(0.0, 1.0);
+    final isExceeded = total > limit;
+    final isNearLimit = pct >= 0.75 && !isExceeded;
+
+    final progressColor = isExceeded
+        ? const Color(0xFFE53935)
+        : (isNearLimit ? const Color(0xFFFF9800) : const Color(0xFF00897B));
+
+    final curr = group.currencyCode;
+
+    return Container(
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(20),
+        border: Border.all(
+          color: isExceeded ? const Color(0xFFFFCDD2) : const Color(0xFFDDE3F0),
+          width: 1.2,
+        ),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withValues(alpha: 0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 4),
+          ),
+        ],
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Row(
+                children: [
+                  Icon(
+                    isExceeded
+                        ? Icons.warning_amber_rounded
+                        : Icons.speed_rounded,
+                    color: progressColor,
+                    size: 20,
+                  ),
+                  const SizedBox(width: 8),
+                  Text(
+                    'Group Budget Cap',
+                    style: GoogleFonts.outfit(
+                      fontSize: 15,
+                      fontWeight: FontWeight.bold,
+                      color: const Color(0xFF1C2B4A),
+                    ),
+                  ),
+                ],
+              ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                decoration: BoxDecoration(
+                  color: progressColor.withValues(alpha: 0.12),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Text(
+                  isExceeded
+                      ? 'EXCEEDED'
+                      : (isNearLimit ? 'WARNING' : '${(pct * 100).toInt()}% USED'),
+                  style: GoogleFonts.inter(
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                    color: progressColor,
+                  ),
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(8),
+            child: LinearProgressIndicator(
+              value: pct,
+              backgroundColor: const Color(0xFFF1F4FB),
+              valueColor: AlwaysStoppedAnimation<Color>(progressColor),
+              minHeight: 8,
+            ),
+          ),
+          const SizedBox(height: 10),
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                'Spent: ${CurrencyHelper.format(total, currencyCode: curr)}',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.w600,
+                  color: const Color(0xFF5A6A85),
+                ),
+              ),
+              Text(
+                'Cap: ${CurrencyHelper.format(limit, currencyCode: curr)}',
+                style: GoogleFonts.inter(
+                  fontSize: 12,
+                  fontWeight: FontWeight.bold,
+                  color: const Color(0xFF1C2B4A),
+                ),
+              ),
+            ],
+          ),
+          if (isExceeded) ...[
+            const SizedBox(height: 8),
+            Container(
+              padding: const EdgeInsets.all(8),
+              decoration: BoxDecoration(
+                color: const Color(0xFFFFEBEB),
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.info_outline, size: 14, color: Color(0xFFE53935)),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      'Exceeded budget cap by ${CurrencyHelper.format(total - limit, currencyCode: curr)}!',
+                      style: GoogleFonts.inter(
+                        fontSize: 11,
+                        fontWeight: FontWeight.w600,
+                        color: const Color(0xFFE53935),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildTotalSpendingHeroCard(BuildContext context, Group group, double total) {
+    return Container(
+      height: 165,
+      margin: const EdgeInsets.fromLTRB(16, 8, 16, 8),
+      padding: const EdgeInsets.all(22),
+      decoration: BoxDecoration(
+        gradient: const LinearGradient(
+          colors: [
+            Color(0xFF1A73E8), // Rich Emerald/Blue
+            Color(0xFF00796B), // Deep Teal
+          ],
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+        ),
+        borderRadius: BorderRadius.circular(28),
+        boxShadow: [
+          BoxShadow(
+            color: const Color(0xFF1A73E8).withValues(alpha: 0.35),
+            blurRadius: 18,
+            offset: const Offset(0, 8),
+          ),
+        ],
+      ),
+      child: Stack(
+        children: [
+          Positioned(
+            right: -20,
+            top: -20,
+            child: Container(
+              width: 100,
+              height: 100,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.1),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Positioned(
+            left: -30,
+            bottom: -30,
+            child: Container(
+              width: 150,
+              height: 150,
+              decoration: BoxDecoration(
+                color: Colors.white.withValues(alpha: 0.05),
+                shape: BoxShape.circle,
+              ),
+            ),
+          ),
+          Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Text(
+                    "Total Spending",
+                    style: GoogleFonts.inter(
+                      color: Colors.white.withValues(alpha: 0.8),
+                      fontSize: 15,
+                      fontWeight: FontWeight.w500,
+                    ),
+                  ),
+                  InkWell(
+                    onTap: () {
+                      Navigator.push(
+                        context,
+                        MaterialPageRoute(
+                          builder: (_) => SettleUpScreen(group: group),
+                        ),
+                      );
+                    },
+                    borderRadius: BorderRadius.circular(20),
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 7,
+                      ),
+                      decoration: BoxDecoration(
+                        color: Colors.white.withValues(alpha: 0.2),
+                        borderRadius: BorderRadius.circular(20),
+                        border: Border.all(
+                          color: Colors.white.withValues(alpha: 0.3),
+                          width: 1,
+                        ),
+                      ),
+                      child: Row(
+                        children: [
+                          Text(
+                            "Settle Up",
+                            style: GoogleFonts.inter(
+                              color: Colors.white,
+                              fontWeight: FontWeight.bold,
+                              fontSize: 12.5,
+                            ),
+                          ),
+                          const SizedBox(width: 4),
+                          const Icon(
+                            Icons.arrow_forward_rounded,
+                            color: Colors.white,
+                            size: 15,
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+              const Spacer(),
+              Text(
+                CurrencyHelper.format(total, currencyCode: group.currencyCode),
+                style: GoogleFonts.outfit(
+                  color: Colors.white,
+                  fontSize: 38,
+                  fontWeight: FontWeight.bold,
+                  letterSpacing: -0.5,
+                ),
+              ),
+              const SizedBox(height: 2),
+              Text(
+                "${group.expenses.length} transaction${group.expenses.length == 1 ? '' : 's'}",
+                style: GoogleFonts.inter(
+                  color: Colors.white.withValues(alpha: 0.75),
+                  fontSize: 13,
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildGroupQuickActions(BuildContext context, Group group) {
+    final isOwner = FirebaseAuth.instance.currentUser?.uid == group.ownerId;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 4),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              Text(
+                "QUICK ACTIONS",
+                style: GoogleFonts.inter(
+                  fontSize: 11,
+                  fontWeight: FontWeight.w700,
+                  letterSpacing: 1.1,
+                  color: Colors.grey[600],
+                ),
+              ),
+              Row(
+                children: [
+                  Icon(Icons.swipe_left_rounded, size: 14, color: Theme.of(context).primaryColor),
+                  const SizedBox(width: 4),
+                  Text(
+                    "Swipe for more ➔",
+                    style: GoogleFonts.inter(
+                      fontSize: 11,
+                      fontWeight: FontWeight.w600,
+                      color: Theme.of(context).primaryColor,
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        ),
+        Container(
+          margin: const EdgeInsets.fromLTRB(16, 2, 16, 8),
+          child: SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            physics: const BouncingScrollPhysics(),
+            child: Row(
+              children: [
+                _actionChip(
+                  icon: Icons.pie_chart_rounded,
+                  label: 'Analytics',
+                  color: const Color(0xFF1A73E8),
+                  bgColor: const Color(0xFFEBF3FF),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => AnalyticsScreen(group: group),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 8),
+                _actionChip(
+                  icon: Icons.account_balance_wallet_rounded,
+                  label: 'Balances',
+                  color: const Color(0xFF00897B),
+                  bgColor: const Color(0xFFE0F2F1),
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => SettleUpScreen(group: group),
+                      ),
+                    );
+                  },
+                ),
+                const SizedBox(width: 8),
+                _actionChip(
+                  icon: Icons.share_rounded,
+                  label: 'Share',
+                  color: const Color(0xFF7B1FA2),
+                  bgColor: const Color(0xFFF3E5F5),
+                  onTap: () => _shareGroupSummaryReport(context, group),
+                ),
+                const SizedBox(width: 8),
+                _actionChip(
+                  icon: Icons.tune_rounded,
+                  label: 'Currency & Budget',
+                  color: const Color(0xFFFF6D00),
+                  bgColor: const Color(0xFFFFE0B2),
+                  onTap: () => _showEditBudgetAndCurrencyDialog(context, group),
+                ),
+                const SizedBox(width: 8),
+                if (isOwner) ...[
+                  _actionChip(
+                    icon: Icons.notifications_active_rounded,
+                    label: 'Reminder',
+                    color: const Color(0xFF0288D1),
+                    bgColor: const Color(0xFFE1F5FE),
+                    onTap: () => _showReminderSheet(context, group),
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                _actionChip(
+                  icon: isOwner ? Icons.delete_outline_rounded : Icons.logout_rounded,
+                  label: isOwner ? 'Delete Group' : 'Exit Group',
+                  color: const Color(0xFFE53935),
+                  bgColor: const Color(0xFFFFEBEE),
+                  onTap: () => isOwner
+                      ? _confirmDeleteGroup(context, group)
+                      : _confirmExitGroup(context, group),
+                ),
+                const SizedBox(width: 8),
+                // Trailing Indicator Badge
+                Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                  decoration: BoxDecoration(
+                    color: Colors.grey[200],
+                    borderRadius: BorderRadius.circular(16),
+                  ),
+                  child: Row(
+                    children: [
+                      Icon(Icons.check_circle_outline_rounded, size: 14, color: Colors.grey[600]),
+                      const SizedBox(width: 4),
+                      Text(
+                        "All set",
+                        style: GoogleFonts.inter(
+                          fontSize: 11,
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey[600],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _actionChip({
+    required IconData icon,
+    required String label,
+    required Color color,
+    required Color bgColor,
+    required VoidCallback onTap,
+  }) {
+    return Material(
+      color: Colors.transparent,
+      child: InkWell(
+        onTap: onTap,
+        borderRadius: BorderRadius.circular(16),
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+          decoration: BoxDecoration(
+            color: bgColor,
+            borderRadius: BorderRadius.circular(16),
+            border: Border.all(color: color.withValues(alpha: 0.2), width: 1),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, size: 17, color: color),
+              const SizedBox(width: 6),
+              Text(
+                label,
+                style: GoogleFonts.inter(
+                  fontSize: 12.5,
+                  fontWeight: FontWeight.w600,
+                  color: color,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
     );
   }
 
@@ -1311,143 +1805,6 @@ class _GroupDetailScreenState extends State<GroupDetailScreen>
 
     return Column(
       children: [
-        // Fixed Total Spending Card
-        Container(
-          height: 180, // Fixed height for consistency
-          margin: const EdgeInsets.fromLTRB(16, 16, 16, 8),
-          padding: const EdgeInsets.all(24),
-          decoration: BoxDecoration(
-            gradient: const LinearGradient(
-              colors: [
-                Color(0xFF1A73E8), // Deep Emerald
-                Color(0xFF00796B), // Lighter Teal/Green
-              ],
-              begin: Alignment.topLeft,
-              end: Alignment.bottomRight,
-            ),
-            borderRadius: BorderRadius.circular(32),
-            boxShadow: [
-              BoxShadow(
-                color: const Color(0xFF1A73E8).withOpacity(0.4),
-                blurRadius: 20,
-                offset: const Offset(0, 10),
-              ),
-            ],
-          ),
-          child: Stack(
-            children: [
-              // Decorative Circle
-              Positioned(
-                right: -20,
-                top: -20,
-                child: Container(
-                  width: 100,
-                  height: 100,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.1),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-              Positioned(
-                left: -30,
-                bottom: -30,
-                child: Container(
-                  width: 150,
-                  height: 150,
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.05),
-                    shape: BoxShape.circle,
-                  ),
-                ),
-              ),
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Row(
-                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                    children: [
-                      const Expanded(
-                        child: Text(
-                          "Total Spending",
-                          overflow: TextOverflow.ellipsis,
-                          style: TextStyle(
-                            color: Colors.white70,
-                            fontSize: 16,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      InkWell(
-                        onTap: () {
-                          Navigator.push(
-                            context,
-                            MaterialPageRoute(
-                              builder: (_) => SettleUpScreen(group: group),
-                            ),
-                          );
-                        },
-                        borderRadius: BorderRadius.circular(20),
-                        child: Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 14,
-                            vertical: 8,
-                          ),
-                          decoration: BoxDecoration(
-                            color: Colors.white.withOpacity(0.2),
-                            borderRadius: BorderRadius.circular(20),
-                            border: Border.all(
-                              color: Colors.white.withOpacity(0.3),
-                              width: 1,
-                            ),
-                          ),
-                          child: const Row(
-                            children: [
-                              Text(
-                                "Settle Up",
-                                style: TextStyle(
-                                  color: Colors.white,
-                                  fontWeight: FontWeight.bold,
-                                  fontSize: 13,
-                                ),
-                              ),
-                              SizedBox(width: 4),
-                              Icon(
-                                Icons.arrow_forward_rounded,
-                                color: Colors.white,
-                                size: 16,
-                              ),
-                            ],
-                          ),
-                        ),
-                      ),
-                    ],
-                  ),
-                  const Spacer(),
-                  Text(
-                    "₹${total.toStringAsFixed(2)}",
-                    style: const TextStyle(
-                      color: Colors.white,
-                      fontSize: 42,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: -1,
-                    ),
-                  ),
-                  const SizedBox(height: 4),
-                  Text(
-                    "${group.expenses.length} transactions",
-                    style: TextStyle(
-                      color: Colors.white.withOpacity(0.6),
-                      fontSize: 14,
-                    ),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        ),
-
         // Settled Up Banner
         if (service.isGroupSettled(group) && group.expenses.isNotEmpty)
           _buildSettledBanner(service, group),
@@ -2230,5 +2587,32 @@ class _ExpenseOwnerSheetState extends State<_ExpenseOwnerSheet> {
         );
       },
     );
+  }
+}
+
+class _SliverTabBarDelegate extends SliverPersistentHeaderDelegate {
+  final Widget tabBar;
+
+  _SliverTabBarDelegate(this.tabBar);
+
+  @override
+  double get minExtent => 54.0;
+
+  @override
+  double get maxExtent => 54.0;
+
+  @override
+  Widget build(
+      BuildContext context, double shrinkOffset, bool overlapsContent) {
+    return Container(
+      color: Theme.of(context).scaffoldBackgroundColor,
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: tabBar,
+    );
+  }
+
+  @override
+  bool shouldRebuild(_SliverTabBarDelegate oldDelegate) {
+    return false;
   }
 }

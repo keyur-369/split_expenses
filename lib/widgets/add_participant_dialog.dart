@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_contacts/flutter_contacts.dart';
 import 'package:email_validator/email_validator.dart';
 import '../services/contact_service.dart';
+import 'skeleton_loading.dart';
 
 class AddParticipantDialog extends StatefulWidget {
   final Function(String name, {String? email, String? phone, String? contactId}) onAdd;
@@ -308,7 +309,7 @@ class _AddParticipantDialogState extends State<AddParticipantDialog> {
         // Contacts list
         Expanded(
           child: _isLoadingContacts
-              ? const Center(child: CircularProgressIndicator())
+              ? const GenericScreenSkeleton(itemHeight: 56, itemCount: 4)
               : _filteredContacts.isEmpty
                   ? Center(
                       child: Column(

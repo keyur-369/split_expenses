@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import '../models/group.dart';
 import '../services/group_service.dart';
+import '../widgets/skeleton_loading.dart';
 
 class SummaryScreen extends StatelessWidget {
   final Group group;
@@ -10,6 +11,14 @@ class SummaryScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final service = Provider.of<GroupService>(context);
+
+    if (service.isLoading) {
+      return Scaffold(
+        appBar: AppBar(title: const Text("Balances & Settlement")),
+        body: const GenericScreenSkeleton(itemHeight: 64, itemCount: 6),
+      );
+    }
+
     final settlements = service.getSettlements(group);
     final balances = service.getOutstandingBalances(group);
 

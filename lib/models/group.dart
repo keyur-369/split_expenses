@@ -21,6 +21,12 @@ class Group extends HiveObject {
   @HiveField(4)
   final DateTime createdAt;
 
+  @HiveField(5)
+  final double? budgetLimit;
+
+  @HiveField(6)
+  final String currencyCode;
+
   // Not stored in Hive — loaded from Firestore at runtime
   final String? ownerId;
 
@@ -36,6 +42,8 @@ class Group extends HiveObject {
     required this.participants,
     required this.expenses,
     required this.createdAt,
+    this.budgetLimit,
+    this.currencyCode = 'INR',
     this.ownerId,
     Set<String>? paidSettlementKeys,
     Map<String, String>? paidSettlementNotes,

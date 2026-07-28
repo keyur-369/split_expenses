@@ -3,6 +3,7 @@ import 'package:provider/provider.dart';
 import '../models/group.dart';
 import '../models/participant.dart';
 import '../services/group_service.dart';
+import '../utils/currency_helper.dart';
 
 class AddExpenseScreen extends StatefulWidget {
   final Group group;
@@ -18,6 +19,17 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
   final _amountController = TextEditingController();
   String? _payerId;
   final Set<String> _involvedIds = {};
+  String _selectedCategory = 'General';
+
+  final List<Map<String, dynamic>> _categories = const [
+    {'name': 'Food', 'icon': Icons.fastfood_rounded, 'emoji': '🍔'},
+    {'name': 'Travel', 'icon': Icons.flight_takeoff_rounded, 'emoji': '✈️'},
+    {'name': 'Bills', 'icon': Icons.receipt_long_rounded, 'emoji': '💡'},
+    {'name': 'Shopping', 'icon': Icons.shopping_bag_rounded, 'emoji': '🛍️'},
+    {'name': 'Groceries', 'icon': Icons.local_grocery_store_rounded, 'emoji': '🛒'},
+    {'name': 'Entertainment', 'icon': Icons.movie_creation_rounded, 'emoji': '🎬'},
+    {'name': 'General', 'icon': Icons.payments_rounded, 'emoji': '💳'},
+  ];
 
   @override
   void initState() {
@@ -46,6 +58,8 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
         amount,
         _payerId!,
         _involvedIds.toList(),
+        category: _selectedCategory,
+        currencyCode: widget.group.currencyCode,
       );
 
       // Find the payer participant object
@@ -345,9 +359,73 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
     );
   }
 
+  Widget _buildCategorySelector(ThemeData theme) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const Text(
+          "Category",
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: Color(0xFF1C2B4A),
+          ),
+        ),
+        const SizedBox(height: 12),
+        SizedBox(
+          height: 44,
+          child: ListView.builder(
+            scrollDirection: Axis.horizontal,
+            itemCount: _categories.length,
+            physics: const BouncingScrollPhysics(),
+            itemBuilder: (context, index) {
+              final cat = _categories[index];
+              final isSelected = _selectedCategory == cat['name'];
+
+              return Padding(
+                padding: const EdgeInsets.only(right: 8.0),
+                child: ChoiceChip(
+                  label: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(cat['emoji']),
+                      const SizedBox(width: 6),
+                      Text(
+                        cat['name'],
+                        style: TextStyle(
+                          fontSize: 13,
+                          fontWeight: isSelected ? FontWeight.bold : FontWeight.w500,
+                          color: isSelected ? Colors.white : const Color(0xFF1C2B4A),
+                        ),
+                      ),
+                    ],
+                  ),
+                  selected: isSelected,
+                  onSelected: (selected) {
+                    if (selected) {
+                      setState(() => _selectedCategory = cat['name']);
+                    }
+                  },
+                  selectedColor: theme.colorScheme.primary,
+                  backgroundColor: Colors.white,
+                  side: BorderSide(
+                    color: isSelected ? theme.colorScheme.primary : const Color(0xFFDDE3F0),
+                  ),
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+                ),
+              );
+            },
+          ),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final symbol = CurrencyHelper.getSymbol(widget.group.currencyCode);
 
     return Scaffold(
       backgroundColor: const Color(0xFFF8FAFF), // Match background color of GroupListScreen
@@ -450,9 +528,19 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                     TextFormField(
                       controller: _amountController,
                       decoration: InputDecoration(
-                        labelText: "Amount",
+                        labelText: "Amount ($symbol)",
                         hintText: "0.00",
-                        prefixIcon: const Icon(Icons.currency_rupee_rounded),
+                        prefixIcon: Padding(
+                          padding: const EdgeInsets.all(12.0),
+                          child: Text(
+                            symbol,
+                            style: TextStyle(
+                              fontSize: 18,
+                              fontWeight: FontWeight.bold,
+                              color: theme.colorScheme.primary,
+                            ),
+                          ),
+                        ),
                         prefixIconColor: theme.colorScheme.primary,
                         floatingLabelStyle: TextStyle(color: theme.colorScheme.primary),
                       ),
@@ -473,6 +561,11 @@ class _AddExpenseScreenState extends State<AddExpenseScreen> {
                   ],
                 ),
               ),
+              const SizedBox(height: 20),
+
+              // Category Selector
+              _buildCategorySelector(theme),
+
               const SizedBox(height: 24),
               // Who paid section
               _buildPayerSelector(theme),

@@ -12,6 +12,7 @@ import 'screens/login_screen.dart';
 import 'screens/splash_screen.dart';
 import 'screens/verify_email_screen.dart';
 import 'theme/app_theme.dart';
+import 'widgets/skeleton_loading.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -126,7 +127,8 @@ class AuthWrapper extends StatelessWidget {
         // Show loading while checking auth state
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const Scaffold(
-            body: Center(child: CircularProgressIndicator()),
+            backgroundColor: AppTheme.bgColor,
+            body: SafeArea(child: GroupListScreenSkeleton()),
           );
         }
 

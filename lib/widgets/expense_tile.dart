@@ -3,6 +3,8 @@ import 'package:flutter/services.dart';
 import 'package:intl/intl.dart';
 import '../models/expense.dart';
 
+import '../utils/currency_helper.dart';
+
 class ExpenseTile extends StatelessWidget {
   final Expense expense;
   final String payerName;
@@ -171,7 +173,7 @@ class ExpenseTile extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.end,
                   children: [
                     Text(
-                      "₹${expense.amount.toStringAsFixed(2)}",
+                      CurrencyHelper.format(expense.amount, currencyCode: expense.currencyCode),
                       style: TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 16,
