@@ -4,6 +4,7 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import '../services/group_service.dart';
 import '../services/auth_service.dart';
+import '../services/notification_service.dart';
 import '../models/group.dart';
 import 'group_detail_screen.dart';
 import 'profile_screen.dart';
@@ -48,6 +49,7 @@ class _GroupListScreenState extends State<GroupListScreen>
     _controller.forward();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       Provider.of<GroupService>(context, listen: false).loadGroups();
+      NotificationService.requestNotificationPermission();
     });
   }
 

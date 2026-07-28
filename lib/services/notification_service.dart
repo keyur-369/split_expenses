@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
@@ -32,6 +33,10 @@ class NotificationService {
     importance: Importance.high,
   );
 
+  static StreamSubscription<QuerySnapshot>? _notificationSubscription;
+  static StreamSubscription<User?>? _authSubscription;
+  static DateTime? _listenerStartTime;
+
   // ──────────────────────────────────────────────────────────────────────────
   // Initialization
   // ──────────────────────────────────────────────────────────────────────────
@@ -40,22 +45,22 @@ class NotificationService {
     // Register background handler first (FCM requirement)
     FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
 
-    // Request permission
-    final settings = await _messaging.requestPermission(
-      alert: true,
-      badge: true,
-      sound: true,
-    );
-
-    debugPrint('🔔 Notification permission: ${settings.authorizationStatus}');
-
-    if (settings.authorizationStatus == AuthorizationStatus.denied) {
-      debugPrint('⚠️  Notification permission denied by user.');
-      return;
-    }
-
     await _setupLocalNotifications();
-    await saveTokenToFirestore();
+    await requestNotificationPermission();
+
+    // Listen to Auth State changes so listener is ALWAYS active when user logs in
+    _authSubscription?.cancel();
+    _authSubscription = FirebaseAuth.instance.authStateChanges().listen((user) async {
+      if (user != null) {
+        debugPrint('👤 User logged in: ${user.uid} — starting FCM token & Firestore notification listeners');
+        await saveTokenToFirestore();
+        startListeningToFirestoreNotifications();
+      } else {
+        debugPrint('👤 User logged out — stopping notification listener');
+        _notificationSubscription?.cancel();
+        _notificationSubscription = null;
+      }
+    });
 
     _messaging.onTokenRefresh.listen((_) async {
       debugPrint('🔄 FCM token refreshed — updating Firestore…');
@@ -68,10 +73,37 @@ class NotificationService {
     final initial = await _messaging.getInitialMessage();
     if (initial != null) _onNotificationTap(initial);
 
-    // Start listening to this user's Firestore notification docs
-    startListeningToFirestoreNotifications();
+    // Initial check if user is already logged in
+    if (FirebaseAuth.instance.currentUser != null) {
+      await saveTokenToFirestore();
+      startListeningToFirestoreNotifications();
+    }
 
     debugPrint('✅ NotificationService initialized');
+  }
+
+  /// Request Notification permission explicitly (iOS + Android 13+ POST_NOTIFICATIONS)
+  static Future<bool> requestNotificationPermission() async {
+    final settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+      provisional: false,
+    );
+
+    debugPrint('🔔 FCM Notification permission: ${settings.authorizationStatus}');
+
+    if (Platform.isAndroid) {
+      final androidPlugin = _localNotifications
+          .resolvePlatformSpecificImplementation<
+              AndroidFlutterLocalNotificationsPlugin>();
+      if (androidPlugin != null) {
+        final granted = await androidPlugin.requestNotificationsPermission();
+        debugPrint('🔔 Android 13+ Notification permission requested: $granted');
+      }
+    }
+
+    return settings.authorizationStatus == AuthorizationStatus.authorized;
   }
 
   // ──────────────────────────────────────────────────────────────────────────
@@ -83,13 +115,14 @@ class NotificationService {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    FirebaseFirestore.instance
+    _notificationSubscription?.cancel();
+    _listenerStartTime = DateTime.now();
+
+    _notificationSubscription = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .collection('notifications')
         .where('isRead', isEqualTo: false)
-        .orderBy('createdAt', descending: true)
-        .limit(20)
         .snapshots()
         .listen((snapshot) async {
       for (final change in snapshot.docChanges) {
@@ -100,15 +133,22 @@ class NotificationService {
 
         final title = (data['title'] as String?) ?? '💬 Split Expenses';
         final body  = (data['body']  as String?) ?? 'You have a new notification.';
+        final createdAt = (data['createdAt'] as Timestamp?)?.toDate();
 
-        debugPrint('🔔 [Firestore] New notification: $title');
+        debugPrint('🔔 [Firestore Realtime] New unread notification: $title');
         debugPrint('💬 Content: $body');
 
-        await _showLocalNotification(
-          title: title,
-          body: body,
-          id: change.doc.id.hashCode,
-        );
+        // Only pop up local banner if created around or after listener start time
+        final isRecent = createdAt == null ||
+            createdAt.isAfter(_listenerStartTime!.subtract(const Duration(seconds: 15)));
+
+        if (isRecent) {
+          await _showLocalNotification(
+            title: title,
+            body: body,
+            id: change.doc.id.hashCode,
+          );
+        }
 
         // Mark as read so it doesn't re-trigger on next snapshot
         await FirebaseFirestore.instance
@@ -122,7 +162,7 @@ class NotificationService {
       debugPrint('❌ Firestore notification listener error: $e');
     });
 
-    debugPrint('👂 Listening to Firestore notifications for ${user.uid}');
+    debugPrint('👂 Active real-time notification listener attached for ${user.uid}');
   }
 
   // ──────────────────────────────────────────────────────────────────────────

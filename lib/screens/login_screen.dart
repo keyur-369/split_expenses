@@ -245,6 +245,16 @@ class _LoginScreenState extends State<LoginScreen>
 
                         const SizedBox(height: 20),
 
+                        // ── OR Divider ──
+                        _buildDivider(),
+
+                        const SizedBox(height: 20),
+
+                        // ── Google Sign-In Button ──
+                        _buildGoogleButton(authService),
+
+                        const SizedBox(height: 20),
+
                         // ── Info Banner ──
                         _buildInfoBanner(),
 
@@ -806,6 +816,105 @@ class _LoginScreenState extends State<LoginScreen>
           ),
         ),
       ],
+    );
+  }
+
+  // ───────────────────────────────────────────
+  //  Divider Line
+  // ───────────────────────────────────────────
+  Widget _buildDivider() {
+    return Row(
+      children: [
+        const Expanded(
+          child: Divider(color: _borderDefault, thickness: 1.2),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Text(
+            'OR',
+            style: GoogleFonts.inter(
+              fontSize: 12,
+              fontWeight: FontWeight.w600,
+              color: _textMid,
+              letterSpacing: 1.0,
+            ),
+          ),
+        ),
+        const Expanded(
+          child: Divider(color: _borderDefault, thickness: 1.2),
+        ),
+      ],
+    );
+  }
+
+  // ───────────────────────────────────────────
+  //  Google Sign-In Button
+  // ───────────────────────────────────────────
+  Widget _buildGoogleButton(AuthService authService) {
+    return Container(
+      height: 54,
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: _borderDefault, width: 1.2),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 10,
+            offset: const Offset(0, 3),
+          ),
+        ],
+      ),
+      child: Material(
+        color: Colors.transparent,
+        borderRadius: BorderRadius.circular(14),
+        child: InkWell(
+          borderRadius: BorderRadius.circular(14),
+          onTap: authService.isLoading
+              ? null
+              : () async {
+                  final success = await authService.signInWithGoogle();
+                  if (!success && authService.errorMessage != null) {
+                    _shakeController.forward(from: 0);
+                    _errorBannerController.forward(from: 0);
+                  }
+                },
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                Container(
+                  width: 22,
+                  height: 22,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                  ),
+                  child: Center(
+                    child: Text(
+                      'G',
+                      style: GoogleFonts.poppins(
+                        fontSize: 18,
+                        fontWeight: FontWeight.w700,
+                        color: const Color(0xFF4285F4),
+                      ),
+                    ),
+                  ),
+                ),
+                const SizedBox(width: 12),
+                Text(
+                  'Continue with Google',
+                  style: GoogleFonts.inter(
+                    fontSize: 15,
+                    fontWeight: FontWeight.w600,
+                    color: _textDark,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
     );
   }
 }
